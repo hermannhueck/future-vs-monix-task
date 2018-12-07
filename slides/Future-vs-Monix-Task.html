@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Future vs. Monix Task</title>
+
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <meta name="keywords" content="Monix,Task,Future,Scala,Cats">
+    <meta name="description" content="A talk that compares the Scala Future with Monix Task">
+
+    <style type="text/css">
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body {
+        font-family: 'Droid Serif';
+      }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: 400;
+        margin-bottom: 0;
+      }
+      .remark-slide-content h1 { font-size: 4em; }
+      .remark-slide-content h2 { font-size: 2.5em; }
+      .remark-slide-content h3 { font-size: 1.6em; }
+      .footnote {
+        position: absolute;
+        bottom: 3em;
+      }
+      li p { line-height: 1.25em; }
+      .red { color: #fa0000; }
+      .large { font-size: 2em; }
+      a, a > code {
+        color: rgb(249, 38, 114);
+        text-decoration: none;
+      }
+      code {
+        background: #e7e8e2;
+        border-radius: 5px;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+      .remark-code-line-highlighted     { background-color: #373832; }
+      .pull-left {
+        float: left;
+        width: 47%;
+      }
+      .pull-right {
+        float: right;
+        width: 47%;
+      }
+      .pull-right ~ p {
+        clear: both;
+      }
+      #slideshow .slide .content code {
+        font-size: 0.8em;
+      }
+      #slideshow .slide .content pre code {
+        font-size: 0.9em;
+        padding: 15px;
+      }
+      .inverse {
+        background: #014908e1;
+        color: #f3f3f3;
+        text-shadow: 0 0 20px #333;
+      }
+      .inverse h1, .inverse h2 {
+        color: #f3f3f3;
+        line-height: 0.8em;
+      }
+
+      /* Slide-specific styling */
+      #slide-inverse .footnote {
+        bottom: 12px;
+        left: 20px;
+      }
+      #slide-how .slides {
+        font-size: 0.9em;
+        position: absolute;
+        top:  151px;
+        right: 140px;
+      }
+      #slide-how .slides h3 {
+        margin-top: 0.2em;
+      }
+      #slide-how .slides .first, #slide-how .slides .second {
+        padding: 1px 20px;
+        height: 90px;
+        width: 120px;
+        -moz-box-shadow: 0 0 10px #777;
+        -webkit-box-shadow: 0 0 10px #777;
+        box-shadow: 0 0 10px #777;
+      }
+      #slide-how .slides .first {
+        background: #fff;
+        position: absolute;
+        top: 20%;
+        left: 20%;
+        z-index: 1;
+      }
+      #slide-how .slides .second {
+        position: relative;
+        background: #fff;
+        z-index: 0;
+      }
+
+      /* Two-column layout */
+      .left-column {
+        color: #777;
+        width: 20%;
+        height: 92%;
+        float: left;
+      }
+      .left-column h2:last-of-type, .left-column h3:last-child {
+        color: #000;
+      }
+      .right-column {
+        width: 75%;
+        float: right;
+        padding-top: 1em;
+      }
+
+      /* Two-column layout 50/50 */
+      .left-column-50 {
+        width: 49%;
+        float: left;
+      }
+      .right-column-50 {
+        width: 49%;
+        float: right;
+      }
+
+      .tiny-font {
+        font-size: 1em
+      }
+    </style>
+  </head>
+  <body>
+
+<textarea id="source">
+
+name: main-template
+layout: true
+class: left, top
+<!---
+class: left, top, inverse
+-->
+
+---
+
+class: center
+
+<br/>
+# Future vs. Monix Task
+
+## Different Ways of Function Composition
+
+<br/>
+<br/>
+## &copy; 2018 Hermann Hueck
+<br/>
+https://github.com/hermannhueck/future-vs-monix-task
+
+---
+
+# Abstract
+<br/>
+
+scala.concurrent.Future is familiar to most Scala devs.
+
+This presentation compares Future with monix.eval.Task (Monix 3.x)
+with their Pros and Cons.
+
+It gives an introduction to Monix Task and deals with the interop between the two.
+
+---
+
+# Agenda
+<br/>
+
+1. Referential Transparency of Future and Task
+1. Comparison of Features
+1. Getting started with monix.eval.Task
+1. monix.execution.Scheduler
+1. Converting Task to Future
+1. Converting Future to Task
+1. [Resources](#Resources)
+
+---
+
+class: middle, center
+
+# 1. Referential Transparency of Future and Task
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+xxxxxxxx
+
+---
+
+class: middle, center
+
+# 2. Comparison of Features
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+xxxxxxxx
+
+---
+
+class: middle, center
+
+# 3. Getting started with monix.eval.Task
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+xxxxxxxx
+
+---
+
+class: middle, center
+
+# 4. monix.execution.Scheduler
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+xxxxxxxx
+
+---
+
+class: middle, center
+
+# 5. Converting Task to Future
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+xxxxxxxx
+
+---
+
+class: middle, center
+
+# 6. Converting Future to Task
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+xxxxxxxx
+
+---
+
+class: middle, center
+
+name: Resources
+
+# 12. Resources
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+## Resources
+
+<br/>
+
+- Code and Slides of this Talk:<br/>
+  https://github.com/hermannhueck/future-vs-monix-task
+
+- Monix 3.x Documentation<br/>
+  https://monix.io/docs/3x/
+
+- Monix 3.x API Documentation<br/>
+  https://monix.io/api/3.0/
+
+---
+
+class: middle, center
+
+## Thanks for Listening
+<br/>
+<br/>
+<br/>
+
+# Q &amp; A
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+
+https://github.com/hermannhueck/future-vs-monix-task
+
+
+</textarea>
+
+    <script src="remark-latest.min.js" type="text/javascript">
+    </script>
+    <script type="text/javascript">
+      var slideshow = remark.create({
+        // sourceUrl: 'some-source.md',
+
+        // Set the slideshow display ratio
+        // Default: '4:3'
+        // Alternatives: '16:9', ...
+        ratio: '4:3',
+
+        // Navigation options
+        navigation: {
+          // Enable or disable navigating using scroll
+          // Default: true
+          // Alternatives: false
+          scroll: false,
+
+          // Enable or disable navigation using touch
+          // Default: true
+          // Alternatives: false
+          touch: true,
+
+          // Enable or disable navigation using click
+          // Default: false
+          // Alternatives: true
+          click: false
+        }
+      });
+    </script>
+  </body>
+</html>
