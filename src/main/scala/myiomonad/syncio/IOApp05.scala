@@ -1,6 +1,9 @@
 package myiomonad.syncio
 
-object IOApp04 extends App {
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.util.Try
+
+object IOApp05 extends App {
 
   // IO[A] wraps a Function0[A].
   // With map, flatMap and pure it is a Monad usable in a for-comprehension
@@ -10,6 +13,17 @@ object IOApp04 extends App {
     def map[B](f: A => B): IO[B] = IO { () => f(run()) }
 
     def flatMap[B](f: A => IO[B]): IO[B] = f(run())
+
+    // ----- different impure run* methods to be run at the end of the world
+
+    // runs on the current Thread returning Try[A]
+    def runToTry: Try[A] = Try { run() }
+
+    // runs on the current Thread returning Either[Throwable, A]
+    def runToEither: Either[Throwable, A] = runToTry.toEither
+
+    // returns a Future that runs the task eagerly on another thread
+    def runToFuture(implicit ec: ExecutionContext): Future[A] = Future { run() }
   }
 
   object IO {
@@ -31,5 +45,13 @@ object IOApp04 extends App {
   // Running the program's encapsulated Function0 produces the side effects.
   program.run()
 
+  program.runToTry
+
+  program.runToEither
+
+  implicit val ec: ExecutionContext = ExecutionContext.global
+  program.runToFuture
+
+  Thread.sleep(200L)
   println("-----\n")
 }

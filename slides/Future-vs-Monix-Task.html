@@ -273,10 +273,16 @@ def program(): Unit = {
 
 program()
 ```
+<br/>
+
+Whenever a method or a function returns Unit <br/>
+it's intension is to produce a side effect.
+
+A <u>___pure___</u> function always returns a value of some type.
 
 ---
 
-## IO Program without side effects
+## IO Program (based on Function0[A])<br/>without side effects
 <br/>
 
 ```scala
@@ -293,18 +299,19 @@ val program: () => Unit =  // () => Unit  is syntactic sugar for:  Function0[Uni
 // Running the program produces the side effects.
 program()
 ```
+<br/>
+
+This is a function returning Unit.<br/>
+It produces a side effect only when run.
 
 ---
 
-## IO Program without side effects
-<br/>
+## IO Program (based on IO[A])<br/>without side effects
 
 ```scala
 // IO[A] wraps a Function0[A]
-//
 case class IO[A](run: () => A)
 ```
-<br/>
 
 ```scala
 // Program definition WITHOUT side effects. This program does nothing.
@@ -321,14 +328,17 @@ val program: IO[Unit] = IO {
 // Running the program's encapsulated Function0 produces the side effects.
 program.run()
 ```
+<br/>
+
+IO[A] just wraps a Function0[A] in a case class.
 
 ---
 
 ## Monadic IO Program without side effects
 
 ```scala
-// IO[A] wraps a Function0[A].
-// With map, flatMap and pure it is a Monad usable in a for-comprehension
+// IO[A] is a Monad wrapping a Function0[A].
+// With map and flatMap it is usable in a for-comprehension.
 //
 case class IO[A](run: () => A) {
 
@@ -346,7 +356,7 @@ object IO {
 // Program definition WITHOUT side effects. This program does nothing.
 // It is just a bunch of monadically composed functions which do not execute.
 //
-val program = for {
+val program: IO[Unit] = for {
   welcome <- IO.pure("Welcome to Scala!")
   _       <- IO { () => print(s"$welcome  What's your name?   ") }
   name    <- IO { () => scala.io.StdIn.readLine }
@@ -355,6 +365,41 @@ val program = for {
 
 // Running the program's encapsulated Function0 produces the side effects.
 program.run()
+```
+
+---
+
+## Defining other run* methods in case class IO
+
+```scala
+case class IO[A](run: () => A) {
+
+  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
+  def flatMap[B](f: A => IO[B]): IO[B] = f(run())
+
+  // ----- different impure run* methods to be run at the end of the world
+
+  // runs on the current Thread returning Try[A]
+  def runToTry: Try[A] = Try { run() }
+
+  // runs on the current Thread returning Either[Throwable, A]
+  def runToEither: Either[Throwable, A] = runToTry.toEither
+
+  // returns a Future that runs the task eagerly on another thread
+  def runToFuture(implicit ec: ExecutionContext): Future[A] = Future { run() }
+}
+```
+
+```scala
+program.run()
+
+program.runToTry
+
+program.runToEither
+
+implicit val ec: ExecutionContext = ExecutionContext.global
+
+program.runToFuture
 ```
 
 ---
