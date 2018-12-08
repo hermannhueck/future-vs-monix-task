@@ -5,7 +5,7 @@
 
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
     <meta name="keywords" content="Monix,Task,Future,Scala,Cats">
-    <meta name="description" content="A talk that compares the Scala Future with Monix Task">
+    <meta name="description" content="A presentation that compares the Scala Future with Monix Task">
 
     <style type="text/css">
       @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
@@ -132,6 +132,18 @@
       .tiny-font {
         font-size: 1em
       }
+
+      .medium-font {
+        font-size: 1.25em
+      }
+
+      .large-font {
+        font-size: 1.5em
+      }
+
+      .xlarge-font {
+        font-size: 1.75em
+      }
     </style>
   </head>
   <body>
@@ -177,7 +189,9 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 # Agenda
 <br/>
 
-1. [Referential Transparency of Future and Task](#ReferentialTransparency)
+1. [Referential Transparency](#ReferentialTransparency)
+1. [The IO Monad](#IOMonad)
+1. [Is Future referentially transparent?](#FutureReferentiallyTransparent)
 1. [Comparison of Features](#Comparison)
 1. [Getting started with monix.eval.Task](#GettingStarted)
 1. [monix.execution.Scheduler](#Scheduler)
@@ -190,7 +204,7 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 class: middle, center
 name: ReferentialTransparency
 
-# 1. Referential Transparency of Future and Task
+# 1. Referential Transparency
 <br/>
 <br/>
 <br/>
@@ -200,14 +214,224 @@ name: ReferentialTransparency
 
 ---
 
-xxxxxxxx
+class: large-font
+
+<br/>
+<br/>
+## Referential Transparency
+<br/>
+<br/>
+
+An expression is called referentially transparent if it can be replaced with its corresponding value
+without changing the program's behavior. This requires that the expression is <u>___pure___</u>, that is to say
+the expression value must be the same for the same inputs and its evaluation must have <u>___no side effects___</u>.
+
+.footnote[
+https://en.wikipedia.org/wiki/Referential_transparency
+]
+
+---
+
+class: large-font
+
+<br/>
+<br/>
+## Benefits of Referential Transparency
+<br/>
+<br/>
+
+- Equational reasoning about the code
+- Refactoring is easier
+- Testing is easier
+
+---
+
+class: middle, center
+name: IOMonad
+
+# 2. The IO Monad
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+## IO Program with side effects
+<br/>
+
+```scala
+// program definition WITH side effects.
+//
+def program(): Unit = {
+  print("Welcome to Scala!  What's your name?   ")
+  val name = scala.io.StdIn.readLine
+  println(s"Well hello, $name!")
+}
+
+program()
+```
+
+---
+
+## IO Program without side effects
+<br/>
+
+```scala
+// Program definition WITHOUT side effects. This program does nothing.
+// It is just a Function0[Unit].
+//
+val program: () => Unit =  // () => Unit  is syntactic sugar for:  Function0[Unit]
+  () => {
+    print("Welcome to Scala!  What's your name?   ")
+    val name = scala.io.StdIn.readLine
+    println(s"Well hello, $name!")
+  }
+
+// Running the program produces the side effects.
+program()
+```
+
+---
+
+## IO Program without side effects
+<br/>
+
+```scala
+// IO[A] wraps a Function0[A]
+//
+case class IO[A](run: () => A)
+```
+<br/>
+
+```scala
+// Program definition WITHOUT side effects. This program does nothing.
+// It is just a Function0[Unit] wrapped in IO.
+//
+val program: IO[Unit] = IO {
+  () => {
+    print("Welcome to Scala!  What's your name?   ")
+    val name = scala.io.StdIn.readLine
+    println(s"Well hello, $name!")
+  }
+}
+
+// Running the program's encapsulated Function0 produces the side effects.
+program.run()
+```
+
+---
+
+## Monadic IO Program without side effects
+
+```scala
+// IO[A] wraps a Function0[A].
+// With map, flatMap and pure it is a Monad usable in a for-comprehension
+//
+case class IO[A](run: () => A) {
+
+  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
+
+  def flatMap[B](f: A => IO[B]): IO[B] = f(run())
+}
+
+object IO {
+  def pure[A](a: A): IO[A] = IO { () => a }
+}
+```
+
+```scala
+// Program definition WITHOUT side effects. This program does nothing.
+// It is just a bunch of monadically composed functions which do not execute.
+//
+val program = for {
+  welcome <- IO.pure("Welcome to Scala!")
+  _       <- IO { () => print(s"$welcome  What's your name?   ") }
+  name    <- IO { () => scala.io.StdIn.readLine }
+  _       <- IO { () => println(s"Well hello, $name!") }
+} yield ()
+
+// Running the program's encapsulated Function0 produces the side effects.
+program.run()
+```
+
+---
+
+class: middle, center
+name: FutureReferentiallyTransparent
+
+# 3. Is Future referentially transparent?
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+## Future is not referentially transparent!
+<br/>
+
+```scala
+val future1: Future[(Int, Int)] = {
+  val atomicInt = new AtomicInteger(0)
+  val future: Future[Int] = Future { atomicInt.incrementAndGet }
+  for {
+    x <- future
+    y <- future
+  } yield (x, y)
+}
+
+// same as future1, but inlined
+val future2: Future[(Int, Int)] = {
+  val atomicInt = new AtomicInteger(0)
+  for {
+    x <- Future { atomicInt.incrementAndGet }
+    y <- Future { atomicInt.incrementAndGet }
+  } yield (x, y)
+}
+
+future1 onComplete println     // Success((1,1))
+future2 onComplete println     // Success((1,2))    <-- not the same result
+```
+
+---
+
+## Monix Task is referentially transparent!
+<br/>
+
+```scala
+val task1: Task[(Int, Int)] = {
+  val atomicInt = new AtomicInteger(0)
+  val task: Task[Int] = Task { atomicInt.incrementAndGet }
+  for {
+    x <- task
+    y <- task
+  } yield (x, y)
+}
+
+// same as future1, but inlined
+val task2: Task[(Int, Int)] = {
+  val atomicInt = new AtomicInteger(0)
+  for {
+    x <- Task { atomicInt.incrementAndGet }
+    y <- Task { atomicInt.incrementAndGet }
+  } yield (x, y)
+}
+
+task1 runAsync println     // Success((1,2))
+task2 runAsync println     // Success((1,2))    <-- same result
+```
 
 ---
 
 class: middle, center
 name: Comparison
 
-# 2. Comparison of Features
+# 4. Comparison of Features
 <br/>
 <br/>
 <br/>
@@ -217,14 +441,34 @@ name: Comparison
 
 ---
 
-xxxxxxxx
+<br/>
+## Comparison of Features
+<br/>
+
+<table>
+  <thead>
+    <tr> <th></th><th>Future</th><th>Task</th> </tr>
+    <tr> <th>&nbsp;</th><th>&nbsp;</th><th></th> </tr>
+  </thead>
+  <tbody>
+    <tr> <td>Evaluation</td><td>eager / strict</td><td>lazy / non-strict</td> </tr>
+    <tr> <td>Memoization</td><td>yes</td><td>no</td> </tr>
+    <tr> <td>Referential Transparency &nbsp;</td><td>no</td><td>yes</td> </tr>
+    <tr> <td>Cancelation support</td><td>no</td><td>yes</td> </tr>
+    <tr> <td>Supports blocking</td><td>yes</td><td>no (possible via Future)</td> </tr>
+    <tr> <td>Runs on an other thread</td><td>always</td><td>not necessarily</td> </tr>
+    <tr> <td>Supports green threads</td><td>no</td><td>yes</td> </tr>
+    <tr> <td>Requires implicit ...</td><td>ExecutionContext ...</td><td>Scheduler ...</td> </tr>
+    <tr> <td></td><td>for nearly every method &nbsp;</td><td>only when run</td> </tr>
+  </tbody>
+</table>
 
 ---
 
 class: middle, center
 name: GettingStarted
 
-# 3. Getting started with monix.eval.Task
+# 5. Getting started with monix.eval.Task
 <br/>
 <br/>
 <br/>
@@ -241,7 +485,7 @@ xxxxxxxx
 class: middle, center
 name: Scheduler
 
-# 4. monix.execution.Scheduler
+# 6. monix.execution.Scheduler
 <br/>
 <br/>
 <br/>
