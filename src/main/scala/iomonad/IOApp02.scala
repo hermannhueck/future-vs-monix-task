@@ -1,4 +1,4 @@
-package myiomonad.syncio
+package iomonad
 
 object IOApp02 extends App {
 

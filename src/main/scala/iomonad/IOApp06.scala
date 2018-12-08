@@ -1,9 +1,9 @@
-package myiomonad.syncio
+package iomonad
 
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scala.util.Try
 
-object IOApp05 extends App {
+object IOApp06 extends App {
 
   // IO[A] wraps a Function0[A].
   // With map, flatMap and pure it is a Monad usable in a for-comprehension
@@ -11,7 +11,6 @@ object IOApp05 extends App {
   case class IO[A](run: () => A) {
 
     def map[B](f: A => B): IO[B] = IO { () => f(run()) }
-
     def flatMap[B](f: A => IO[B]): IO[B] = f(run())
 
     // ----- different impure run* methods to be run at the end of the world
@@ -28,6 +27,7 @@ object IOApp05 extends App {
 
   object IO {
     def pure[A](a: A): IO[A] = IO { () => a }
+    def eval[A](a: => A): IO[A] = IO { () => a }
   }
 
   println("\n-----")
@@ -37,9 +37,9 @@ object IOApp05 extends App {
   //
   val program: IO[Unit] = for {
     welcome <- IO.pure("Welcome to Scala!")
-    _       <- IO { () => print(s"$welcome  What's your name?   ") }
-    name    <- IO { () => scala.io.StdIn.readLine }
-    _       <- IO { () => println(s"Well hello, $name!") }
+    _       <- IO.eval { print(s"$welcome  What's your name?   ") }
+    name    <- IO.eval { scala.io.StdIn.readLine }
+    _       <- IO.eval { println(s"Well hello, $name!") }
   } yield ()
 
   // Running the program's encapsulated Function0 produces the side effects.

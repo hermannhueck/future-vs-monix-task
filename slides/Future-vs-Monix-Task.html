@@ -341,14 +341,44 @@ IO[A] just wraps a Function0[A] in a case class.
 // With map and flatMap it is usable in a for-comprehension.
 //
 case class IO[A](run: () => A) {
-
   def map[B](f: A => B): IO[B] = IO { () => f(run()) }
+  def flatMap[B](f: A => IO[B]): IO[B] = f(run())
+}
+```
 
+```scala
+// Program definition WITHOUT side effects. This program does nothing.
+// It is just a bunch of monadically composed functions which do not execute.
+//
+val program: IO[Unit] = for {
+  _       <- IO { () => print(s"Welcome to Scala!  What's your name?   ") }
+  name    <- IO { () => scala.io.StdIn.readLine }
+  _       <- IO { () => println(s"Well hello, $name!") }
+} yield ()
+
+// Running the program's encapsulated Function0 produces the side effects.
+program.run()
+```
+<br/>
+
+With _map_ and _flatMap_ _IO_ is monadic and ready for for-comprehensions.
+
+---
+
+## Monadic IO Program without side effects
+
+```scala
+// IO[A] is a Monad wrapping a Function0[A].
+// With map and flatMap it is usable in a for-comprehension.
+//
+case class IO[A](run: () => A) {
+  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
   def flatMap[B](f: A => IO[B]): IO[B] = f(run())
 }
 
 object IO {
-  def pure[A](a: A): IO[A] = IO { () => a }
+  def pure[A](value: A): IO[A] = IO { () => value }
+  def eval[A](thunk: => A): IO[A] = IO { () => thunk }
 }
 ```
 
@@ -358,12 +388,12 @@ object IO {
 //
 val program: IO[Unit] = for {
   welcome <- IO.pure("Welcome to Scala!")
-  _       <- IO { () => print(s"$welcome  What's your name?   ") }
-  name    <- IO { () => scala.io.StdIn.readLine }
-  _       <- IO { () => println(s"Well hello, $name!") }
+  _       <- IO.eval { print(s"$welcome  What's your name?   ") }
+  name    <- IO.eval { scala.io.StdIn.readLine }
+  _       <- IO.eval { println(s"Well hello, $name!") }
 } yield ()
 
-// Running the program's encapsulated Function0 produces the side effects.
+// Running and producing the side effects "at the end of the world".
 program.run()
 ```
 
@@ -391,15 +421,15 @@ case class IO[A](run: () => A) {
 ```
 
 ```scala
-program.run()
+program.run()                                  // run sync
 
-program.runToTry
+program.runToTry                               // run sync
 
-program.runToEither
+program.runToEither                            // run sync
 
 implicit val ec: ExecutionContext = ExecutionContext.global
 
-program.runToFuture
+program.runToFuture                            // run async
 ```
 
 ---
@@ -486,25 +516,26 @@ name: Comparison
 
 ---
 
-<br/>
 ## Comparison of Features
 <br/>
 
 <table>
   <thead>
-    <tr> <th></th><th>Future</th><th>Task</th> </tr>
-    <tr> <th>&nbsp;</th><th>&nbsp;</th><th></th> </tr>
+    <tr> <th></th><th><u>Future</u></th><th><u>Task</u></th> </tr>
   </thead>
   <tbody>
     <tr> <td>Evaluation</td><td>eager / strict</td><td>lazy / non-strict</td> </tr>
-    <tr> <td>Memoization</td><td>yes</td><td>no</td> </tr>
+    <tr> <td>Memoization</td><td>always</td><td>possible, default: no</td> </tr>
     <tr> <td>Referential Transparency &nbsp;</td><td>no</td><td>yes</td> </tr>
-    <tr> <td>Cancelation support</td><td>no</td><td>yes</td> </tr>
+    <tr> <td>Supports cancelation</td><td>no</td><td>yes</td> </tr>
     <tr> <td>Supports blocking</td><td>yes</td><td>no (possible via Future)</td> </tr>
+    <tr> <td>Supports sync execution</td><td>no</td><td>yes</td> </tr>
     <tr> <td>Runs on an other thread</td><td>always</td><td>not necessarily</td> </tr>
     <tr> <td>Supports green threads</td><td>no</td><td>yes</td> </tr>
     <tr> <td>Requires implicit ...</td><td>ExecutionContext ...</td><td>Scheduler ...</td> </tr>
-    <tr> <td></td><td>for nearly every method &nbsp;</td><td>only when run</td> </tr>
+    <tr> <td></td><td>for nearly every method</td><td>only when run</td> </tr>
+    <tr> <td>Stack Safety</td><td>no</td><td>yes (due to trampolining)</td> </tr>
+    <tr> <td>Supports ScalaJS</td><td>yes</td><td>yes</td> </tr>
   </tbody>
 </table>
 
@@ -523,7 +554,14 @@ name: GettingStarted
 
 ---
 
-xxxxxxxx
+class: middle, center, large-font
+
+## build.sbt
+<br/>
+
+```scala
+libraryDependencies += "io.monix" %% "monix" % "3.0.0-RC2"
+```
 
 ---
 
