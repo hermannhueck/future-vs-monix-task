@@ -1,4 +1,4 @@
-package iomonad
+package ch02iomonad
 
 object IOApp02 extends App {
 

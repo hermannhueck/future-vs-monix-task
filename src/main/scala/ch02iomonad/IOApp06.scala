@@ -1,4 +1,4 @@
-package iomonad
+package ch02iomonad
 
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scala.util.Try

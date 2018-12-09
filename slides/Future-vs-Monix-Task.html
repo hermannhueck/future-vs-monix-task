@@ -193,10 +193,12 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 1. [The IO Monad](#IOMonad)
 1. [Is Future referentially transparent?](#FutureReferentiallyTransparent)
 1. [Comparison of Features](#Comparison)
-1. [Getting started with monix.eval.Task](#GettingStarted)
-1. [monix.execution.Scheduler](#Scheduler)
-1. [Converting Task to Future](#TaskToFuture)
+1. [Execution of monix.eval.Task](#TaskExecution)
+1. [Task Builders](#TaskBuilders)
 1. [Converting Future to Task](#FutureToTask)
+1. [Memoization](#Memoization)
+1. [FlatMap](#FlatMap)
+1. [Async Boundaries](#AsyncBoundaries)
 1. [Resources](#Resources)
 
 ---
@@ -542,9 +544,9 @@ name: Comparison
 ---
 
 class: middle, center
-name: GettingStarted
+name: TaskExecution
 
-# 5. Getting started with monix.eval.Task
+# 5. Execution of monix.eval.Task
 <br/>
 <br/>
 <br/>
@@ -554,9 +556,9 @@ name: GettingStarted
 
 ---
 
-class: middle, center, large-font
-
+<br/>
 ## build.sbt
+<br/>
 <br/>
 
 ```scala
@@ -565,10 +567,303 @@ libraryDependencies += "io.monix" %% "monix" % "3.0.0-RC2"
 
 ---
 
-class: middle, center
-name: Scheduler
+## Running a Task requires an implicit *Scheduler*
 
-# 6. monix.execution.Scheduler
+--
+
+Either ...
+
+```scala
+import monix.execution.Scheduler.Implicits.global
+```
+
+or create an implicit instance ...
+
+```scala
+implicit val scheduler: Scheduler = monix.execution.Scheduler.global
+```
+
+--
+- *Scheduler* is a subclass of *ExecutionContext*, hence is serves as well as an *ExecutionContext* for *Future*.
+
+--
+
+- The global *Scheduler* is backed by the global *ExecutionContext* which is backed by Java's *ForkJoinPool*.
+
+--
+
+- *Future* requires an *ExecutionContext* for almost every method (*apply*, *map*, *flatMap*, *onComplete*, etc.) whereas ...
+
+--
+
+- *Task* (due to it's laziness) requires a *Scheduler* only when run.
+
+---
+
+## Running a *Task*
+
+--
+
+*Future* is eager. It starts running when you create it.
+
+```scala
+implicit val ec: ExecutionContext = ExecutionContext.global
+
+val task: Future[Int] = Future { compute }
+
+val callback: Try[Int] => Unit = {                    // Try based callback
+  case Success(result) => println(s"result = $result")
+  case Failure(ex) => println(s"ERROR: ${ex.getMessage}")
+}
+
+task onComplete callback
+```
+
+--
+
+*Task* is lazy. By it's creation nothing is run.
+
+```scala
+val task: Task[Int] = Task { compute }
+
+val callback: Either[Throwable, Int] => Unit = {      // Either based callback
+  case Right(result) => println(s"result = $result")
+  case Left(ex) => println(s"ERROR: ${ex.getMessage}")
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task runAsync callback
+```
+
+---
+
+## Canceling a *Task*
+
+--
+
+*Future* cannot be canceled, but *Task* can.
+
+--
+
+```scala
+val task: Task[Int] = Task {
+  println("side effect")
+  compute
+}.delayExecution(1.second)
+
+val callback: Either[Throwable, Int] => Unit = {
+  case Right(result) => println(s"result = $result")
+  case Left(ex) => println(s"ERROR: ${ex.getMessage}")
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+val cancelable: Cancelable = task runAsync callback
+
+// If we change our mind...
+cancelable.cancel()
+```
+
+--
+
+A *Cancelable* just has a method *cancel*.
+```scala
+package monix.execution
+
+trait Cancelable extends Serializable {
+  def cancel(): Unit
+}
+```
+
+---
+
+## Two flavours of *Callback*
+
+Both are *Either* based.
+
+--
+
+```scala
+val callback: Either[Throwable, Int] => Unit = {
+  case Right(result) => println(s"result = $result")
+  case Left(ex) => println(s"ERROR: ${ex.getMessage}")
+}
+```
+
+--
+
+```scala
+val callback: Callback[Throwable, Int] = new Callback[Throwable, Int] {
+  def onSuccess(result: Int): Unit = println(s"result = $result")
+  def onError(ex: Throwable): Unit = println(s"ERROR: ${ex.getMessage}")
+}
+```
+
+--
+
+A *Callback* is a subclass of a function of type (Either[E, A] => Unit).
+
+--
+
+```scala
+package monix.execution
+
+abstract class Callback[-E, -A] extends (Either[E, A] => Unit) {
+
+  def onSuccess(value: A): Unit
+  def onError(e: E): Unit
+  // ...
+}
+```
+
+---
+
+## Converting *Task* to *Future*
+
+--
+
+*Task#runToFuture* turns a *Task* into a *Future* and runs it.
+
+--
+
+A *Scheduler* is required in implicit scope.
+
+--
+
+```scala
+val task: Task[Int] = Task {
+  compute
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+val future: Future[Int] = task.runToFuture
+
+val callback: Try[Int] => Unit = {
+  case Success(result) => println(s"result = $result")
+  case Failure(ex) => println(s"ERROR: ${ex.getMessage}")
+}
+
+future onComplete callback
+```
+
+---
+
+## *CancelableFuture*
+
+--
+
+*CancelableFuture* is a *Future* with a *cancel* method.
+
+--
+
+```scala
+package monix.execution
+
+sealed abstract class CancelableFuture[+A] extends Future[A] with Cancelable {
+  // ...
+}
+```
+
+--
+
+*Task#runtToFuture* returns a *CancelableFuture*.
+
+--
+
+```scala
+val task: Task[Int] = Task { compute }.delayExecution(1.second)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+val future: CancelableFuture[Int] = task.runToFuture
+
+val callback: Try[Int] => Unit = {
+  case Success(result) => println(s"result = $result")
+  case Failure(ex) => println(s"ERROR: ${ex.getMessage}")
+}
+
+future onComplete callback
+
+// If we change our mind...
+future.cancel()
+```
+
+---
+
+## *Task* cannot be blocked (directly)
+<br/>
+
+--
+
+The API of *Task* doesn't support any means to wait for a result.
+
+--
+
+But we can convert *Task* to *Future* and wait for the Future's result to become available.
+
+--
+
+<br/>
+```scala
+val task: Task[Int] = Task {
+  compute
+}.delayExecution(1.second)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+val future: CancelableFuture[Int] = task.runToFuture
+
+val result = Await.result(future, 3.seconds)
+println(s"result = $result")
+```
+
+---
+
+## *Task#foreach*
+
+--
+
+*Task#foreach* runs the *Task*.
+
+--
+
+It processes the result, but swallows possible errors.
+
+--
+
+<br/>
+```scala
+val task: Task[Int] = Task {
+  compute // successfully returns an Int value
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task foreach { result => println(s"result = $result") }
+// computed value is printed
+```
+
+--
+
+```scala
+val task: Task[Int] = Task {
+  compute // throws an Exception
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task foreach { result => println(s"result = $result") }
+// no error is spit out
+```
+
+---
+
+class: middle, center
+name: TaskBuilders
+
+# 6. Task Builders
 <br/>
 <br/>
 <br/>
@@ -578,31 +873,38 @@ name: Scheduler
 
 ---
 
-xxxxxxxx
+## *Task.now* / *Task.pure*
 
 ---
 
-class: middle, center
-name: TaskToFuture
-
-# 5. Converting Task to Future
-<br/>
-<br/>
-<br/>
-<br/>
-<br/>
-&nbsp;
+## *Task.raiseError*
 
 ---
 
-xxxxxxxx
+## *Task.apply* / *Task.eval* / *Task.delay*
+
+---
+
+## *Task.evalOnce*
+
+---
+
+## *Task.defer* / *Task.suspend*
+
+---
+
+## *Task.never*
+
+---
+
+## *Task.unit*
 
 ---
 
 class: middle, center
 name: FutureToTask
 
-# 6. Converting Future to Task
+# 7. Converting Future to Task
 <br/>
 <br/>
 <br/>
@@ -612,7 +914,54 @@ name: FutureToTask
 
 ---
 
-xxxxxxxx
+## *Task.fromFuture*
+
+---
+
+## *Task.deferFuture*
+
+---
+
+## *Task.deferFutureAction*
+
+---
+
+class: middle, center
+name: Memoization
+
+# 8. Memoization
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
+name: FlatMap
+
+# 9. FlatMap
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
+name: AsyncBoundaries
+
+# 10. Async Boundaries
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
 
 ---
 

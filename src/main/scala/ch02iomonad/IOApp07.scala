@@ -1,4 +1,4 @@
-package iomonad
+package ch02iomonad
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
