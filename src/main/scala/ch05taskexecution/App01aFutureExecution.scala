@@ -7,12 +7,10 @@ object App01aFutureExecution extends App {
 
   println("\n-----")
 
-  def compute: Int = 1 + 1
-
   implicit val ec: ExecutionContext = ExecutionContext.global
 
   val task: Future[Int] = Future {
-    compute
+    sumOfRange(0, 1000)
   }
   println(">>> Future started")
 

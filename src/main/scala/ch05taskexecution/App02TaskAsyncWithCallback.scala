@@ -7,11 +7,9 @@ object App02TaskAsyncWithCallback extends App {
 
   println("\n-----")
 
-  def compute: Int = 1 + 1
-
   val task: Task[Int] = Task {
     println("side effect")
-    compute
+    sumOfRange(0, 1000)
   }
 
   val callback: Either[Throwable, Int] => Unit = new Callback[Throwable, Int] {

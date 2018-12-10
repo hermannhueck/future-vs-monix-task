@@ -5,15 +5,13 @@ import monix.execution.{Cancelable, Scheduler}
 
 import scala.concurrent.duration._
 
-object App01bCancelable extends App {
+object App01cCancelable extends App {
 
   println("\n-----")
 
-  def compute: Int = 1 + 1
-
   val task: Task[Int] = Task {
     println("side effect")
-    compute
+    sumOfRange(0, 1000)
   }.delayExecution(1.second)
 
   val callback: Either[Throwable, Int] => Unit = {

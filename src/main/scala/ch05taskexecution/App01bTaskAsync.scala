@@ -3,15 +3,13 @@ package ch05taskexecution
 import monix.eval.Task
 import monix.execution.Scheduler
 
-object App01aTaskAsync extends App {
+object App01bTaskAsync extends App {
 
   println("\n-----")
 
-  def compute: Int = 1 + 1
-
   val task: Task[Int] = Task {
     println("side effect")
-    compute
+    sumOfRange(0, 1000)
   }
 
   val callback: Either[Throwable, Int] => Unit = {      // Either based callback

@@ -873,31 +873,168 @@ name: TaskBuilders
 
 ---
 
+## *Task.apply* / *Task.eval* / *Task.delay*
+
+- corresponds to *Future.apply*
+
+- evaluates a thunk lazily
+
+```scala
+val task = Task.eval {
+  println("side effect")
+  fibonacci(20)
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task foreach println
+//=> side effect
+//=> 10946
+
+// The evaluation (and thus all contained side effects)
+// gets triggered on each run:
+task runAsync printCallback
+//=> side effect
+//=> 10946
+```
+
+---
+
 ## *Task.now* / *Task.pure*
+
+- corresponds to *Future.successful*
+
+- lifts a pure value into the *Task* context
+
+- evaluates eagerly / immediately
+
+- !!! Don't use it for computations and side effects, only for pure values !!!
+
+```scala
+val task = Task.now {
+  println("side effect")              // NO SIDE EFFECTS in Task.now !!!
+  42
+}
+//=> side effect
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task runAsync printCallback
+//=> 42
+```
+
+---
+
+## *Task.unit*
+
+- lifts a pure Unit value into the *Task* context
+
+- evaluates eagerly / immediately
+
+- Task.unit <--> Task.now(())
+
+```scala
+val task: Task[Unit] = Task.unit
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task runAsync println
+//=> Right(())
+```
 
 ---
 
 ## *Task.raiseError*
 
----
+- corresponds to *Future.failed*
 
-## *Task.apply* / *Task.eval* / *Task.delay*
+- lifts a *Throwable* into the *Task* context (analogous to *Task.now*)
+
+- evaluates eagerly / immediately
+
+- !!! Don't use it for computations and side effects, only for pure errors/exceptions !!!
+
+```scala
+val task = Task.raiseError {
+  println("side effect")              // NO SIDE EFFECTS in Task.raiseError !!!
+  new IllegalStateException("illegal state")
+}
+//=> side effect
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task runAsync printCallback
+//=> java.lang.IllegalStateException: illegal state
+```
 
 ---
 
 ## *Task.evalOnce*
 
----
+- corresponds to *Future.apply*
 
-## *Task.defer* / *Task.suspend*
+- evaluates a thunk lazily on the first run and memoizes/caches the result
+
+- is am impure function (due to memoization)
+
+- Task.evalOnce <--> Task.eval.memoize
+
+```scala
+val task = Task.evalOnce {
+  println("side effect")
+  fibonacci(20)
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task foreach println
+//=> side effect
+//=> 10946
+
+// Result was memoized on the first run!
+task runAsync printCallback
+//=> 10946
+```
 
 ---
 
 ## *Task.never*
 
+- creates a *Task* that never completes
+
+- evaluates lazily
+
+```scala
+val never: Task[Int] = Task.never[Int]
+
+val timedOut: Task[Int] = never.timeoutTo(3.seconds, Task.raiseError(new TimeoutException))
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+timedOut runAsync println
+// After 3 seconds:
+// => Left(java.util.concurrent.TimeoutException)
+```
+
 ---
 
-## *Task.unit*
+## *Task.defer* / *Task.suspend*
+
+- takes a (possibly eager) *Task* and turns it into a lazy *Task* of the same type.
+
+- evaluates lazily
+
+```scala
+val never: Task[Int] = Task.never[Int]
+
+val timedOut: Task[Int] = never.timeoutTo(3.seconds, Task.raiseError(new TimeoutException))
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+timedOut runAsync println
+// After 3 seconds:
+// => Left(java.util.concurrent.TimeoutException)
+```
 
 ---
 

@@ -10,11 +10,9 @@ object App03bCancelableFuture extends App {
 
   println("\n-----")
 
-  def compute: Int = 1 + 1
-
   val task: Task[Int] = Task {
     println("side effect")
-    compute
+    sumOfRange(0, 1000)
   }.delayExecution(1.second)
 
   implicit val scheduler: Scheduler = Scheduler.global
