@@ -1,4 +1,2 @@
 
-package object ch05taskexecution extends tools.Tools {
-
-}
+package object ch05taskexecution extends tools.Tools

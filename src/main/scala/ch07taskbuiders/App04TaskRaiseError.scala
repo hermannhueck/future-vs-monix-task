@@ -1,22 +1,22 @@
-package ch06taskbuiders
+package ch07taskbuiders
 
 import monix.eval.Task
 import monix.execution.Scheduler
 
-object App02TaskNow extends App {
+object App04TaskRaiseError extends App {
 
   println(s"\n----- Main $currentThread")
 
-  val task = Task.now {     // Task.now evaluates eagerly
+  val task = Task.raiseError {     // Task.raiseError evaluates eagerly
     println(s"side effect in $currentThread") // NO SIDE EFFECTS in Task.now, only pure values !!
-    42
+    new IllegalStateException("illegal state")
   }
   //=> side effect
 
   implicit val scheduler: Scheduler = Scheduler.global
 
   task runAsync printCallback
-  //=> 42
+  //=> java.lang.IllegalStateException: illegal state
 
   Thread.sleep(100L)
   println("-----\n")

@@ -1,17 +1,18 @@
-package ch05taskexecution
+package ch06Cancelation
 
 import monix.eval.Task
 import monix.execution.{CancelableFuture, Scheduler}
 
-import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
-object App03bCancelableFuture extends App {
+import scala.concurrent.duration._
 
-  println("\n-----")
+object App02CancelableFuture extends App {
+
+  println(s"\n----- Main $currentThread")
 
   val task: Task[Int] = Task {
-    println("side effect")
+    println(s"side effect in $currentThread")
     sumOfRange(0, 1000)
   }.delayExecution(1.second)
 

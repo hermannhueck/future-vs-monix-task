@@ -193,11 +193,12 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 1. [The IO Monad](#IOMonad)
 1. [Is Future referentially transparent?](#FutureReferentiallyTransparent)
 1. [Comparison of Features](#Comparison)
-1. [Execution of monix.eval.Task](#TaskExecution)
+1. [Task Execution](#TaskExecution)
+1. [Task Cancelation](#TaskCancelation)
 1. [Task Builders](#TaskBuilders)
 1. [Converting Future to Task](#FutureToTask)
 1. [Memoization](#Memoization)
-1. [FlatMap](#FlatMap)
+1. [Tail Recursive Loops](#TailRecursiveLoops)
 1. [Async Boundaries](#AsyncBoundaries)
 1. [Resources](#Resources)
 
@@ -436,6 +437,20 @@ program.runToFuture                            // run async
 
 ---
 
+class: middle, center, large-font
+
+## Monix Task is the IO Monad
+
+... a bit more sophisticated than my implementation.
+
+;-)
+
+But it can also be seen as ...
+
+## a delayed Future.
+
+---
+
 class: middle, center
 name: FutureReferentiallyTransparent
 
@@ -546,7 +561,7 @@ name: Comparison
 class: middle, center
 name: TaskExecution
 
-# 5. Execution of monix.eval.Task
+# 5. Task Execution
 <br/>
 <br/>
 <br/>
@@ -609,7 +624,7 @@ implicit val scheduler: Scheduler = monix.execution.Scheduler.global
 ```scala
 implicit val ec: ExecutionContext = ExecutionContext.global
 
-val task: Future[Int] = Future { compute }
+val task: Future[Int] = Future { compute }            // starts running HERE!
 
 val callback: Try[Int] => Unit = {                    // Try based callback
   case Success(result) => println(s"result = $result")
@@ -621,7 +636,7 @@ task onComplete callback
 
 --
 
-*Task* is lazy. By it's creation nothing is run.
+*Task* is a function, hence it is lazy. By it's creation nothing is run.
 
 ```scala
 val task: Task[Int] = Task { compute }
@@ -633,47 +648,7 @@ val callback: Either[Throwable, Int] => Unit = {      // Either based callback
 
 implicit val scheduler: Scheduler = Scheduler.global
 
-task runAsync callback
-```
-
----
-
-## Canceling a *Task*
-
---
-
-*Future* cannot be canceled, but *Task* can.
-
---
-
-```scala
-val task: Task[Int] = Task {
-  println("side effect")
-  compute
-}.delayExecution(1.second)
-
-val callback: Either[Throwable, Int] => Unit = {
-  case Right(result) => println(s"result = $result")
-  case Left(ex) => println(s"ERROR: ${ex.getMessage}")
-}
-
-implicit val scheduler: Scheduler = Scheduler.global
-
-val cancelable: Cancelable = task runAsync callback
-
-// If we change our mind...
-cancelable.cancel()
-```
-
---
-
-A *Cancelable* just has a method *cancel*.
-```scala
-package monix.execution
-
-trait Cancelable extends Serializable {
-  def cancel(): Unit
-}
+task runAsync callback                                // starts running HERE!
 ```
 
 ---
@@ -740,54 +715,12 @@ implicit val scheduler: Scheduler = Scheduler.global
 
 val future: Future[Int] = task.runToFuture
 
-val callback: Try[Int] => Unit = {
+val callback: Try[Int] => Unit = {                    // Try based callback
   case Success(result) => println(s"result = $result")
   case Failure(ex) => println(s"ERROR: ${ex.getMessage}")
 }
 
 future onComplete callback
-```
-
----
-
-## *CancelableFuture*
-
---
-
-*CancelableFuture* is a *Future* with a *cancel* method.
-
---
-
-```scala
-package monix.execution
-
-sealed abstract class CancelableFuture[+A] extends Future[A] with Cancelable {
-  // ...
-}
-```
-
---
-
-*Task#runtToFuture* returns a *CancelableFuture*.
-
---
-
-```scala
-val task: Task[Int] = Task { compute }.delayExecution(1.second)
-
-implicit val scheduler: Scheduler = Scheduler.global
-
-val future: CancelableFuture[Int] = task.runToFuture
-
-val callback: Try[Int] => Unit = {
-  case Success(result) => println(s"result = $result")
-  case Failure(ex) => println(s"ERROR: ${ex.getMessage}")
-}
-
-future onComplete callback
-
-// If we change our mind...
-future.cancel()
 ```
 
 ---
@@ -813,7 +746,7 @@ val task: Task[Int] = Task {
 
 implicit val scheduler: Scheduler = Scheduler.global
 
-val future: CancelableFuture[Int] = task.runToFuture
+val future: Future[Int] = task.runToFuture
 
 val result = Await.result(future, 3.seconds)
 println(s"result = $result")
@@ -861,9 +794,9 @@ task foreach { result => println(s"result = $result") }
 ---
 
 class: middle, center
-name: TaskBuilders
+name: TaskCancelation
 
-# 6. Task Builders
+# 6. Task Cancelation
 <br/>
 <br/>
 <br/>
@@ -873,7 +806,155 @@ name: TaskBuilders
 
 ---
 
-## *Task.apply* / *Task.eval* / *Task.delay*
+## Canceling a *Task*
+
+--
+
+*Future* cannot be canceled, but *Task* can.
+
+--
+
+```scala
+val task: Task[Int] = Task {
+  println("side effect")
+  compute
+}.delayExecution(1.second)
+
+val callback: Either[Throwable, Int] => Unit = {
+  case Right(result) => println(s"result = $result")
+  case Left(ex) => println(s"ERROR: ${ex.getMessage}")
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+val cancelable: Cancelable = task runAsync callback
+
+// If we change our mind...
+cancelable.cancel()
+```
+
+--
+
+A *Cancelable* just has a method *cancel*.
+```scala
+package monix.execution
+
+trait Cancelable extends Serializable {
+  def cancel(): Unit
+}
+```
+
+---
+
+## *CancelableFuture*
+
+--
+
+*CancelableFuture* is a *Future* with a *cancel* method.
+
+--
+
+```scala
+package monix.execution
+
+sealed abstract class CancelableFuture[+A] extends Future[A] with Cancelable {
+  // ...
+}
+```
+
+--
+
+*Task#runtToFuture* returns a *CancelableFuture*.
+
+--
+
+```scala
+val task: Task[Int] = Task { compute }.delayExecution(1.second)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+val future: CancelableFuture[Int] = task.runToFuture
+
+val callback: Try[Int] => Unit = {
+  case Success(result) => println(s"result = $result")
+  case Failure(ex) => println(s"ERROR: ${ex.getMessage}")
+}
+
+future onComplete callback
+
+// If we change our mind...
+future.cancel()
+```
+
+---
+
+class: middle, center
+name: TaskBuilders
+
+# 7. Task Builders
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+## Task Builders - Overview
+
+--
+
+```scala
+// non-strict evaluation - equivalent to a function
+Task.eval { println("side effect"); "always" }
+```
+
+--
+
+```scala
+// strict evaluation - lifts a pure value into Task context
+Task.now { println("side effect"); "immediate" }
+```
+
+--
+
+```scala
+// strict evaluation - lifts a Throwable into Task context
+Task.raiseError { println("side effect"); new Exception }
+```
+
+--
+
+```scala
+// non-strict + memoized evaluation - equivalent to a lazy val
+Task.evalOnce { println("side effect"); "memoized" }
+```
+
+--
+
+```scala
+// non-strict evaluation - turns a (possibly eager) Task into a lazy one
+Task.defer { println("side effect"); Task.now("no longer immediate") }
+```
+
+--
+
+```scala
+// non-strict evaluation on a different "logical" thread
+Task.evalAsync { println("side effect"); "always on different thread" }
+```
+--
+
+.footnote[
+[Skip details](#FutureToTask)
+]
+
+---
+
+name: TaskEval
+
+## *Task.eval* / *Task.apply* / *Task.delay*
 
 - corresponds to *Future.apply*
 
@@ -900,13 +981,15 @@ task runAsync printCallback
 
 ---
 
+name: TaskNow
+
 ## *Task.now* / *Task.pure*
 
 - corresponds to *Future.successful*
 
 - lifts a pure value into the *Task* context
 
-- evaluates eagerly / immediately
+- evaluates eagerly / immediately, never spawning a separate thread
 
 - !!! Don't use it for computations and side effects, only for pure values !!!
 
@@ -925,13 +1008,15 @@ task runAsync printCallback
 
 ---
 
+name: TaskUnit
+
 ## *Task.unit*
 
 - lifts a pure Unit value into the *Task* context
 
-- evaluates eagerly / immediately
+- evaluates eagerly / immediately, never spawning a separate thread
 
-- Task.unit <--> Task.now(())
+- Task.unit <-> Task.now(())
 
 ```scala
 val task: Task[Unit] = Task.unit
@@ -944,13 +1029,15 @@ task runAsync println
 
 ---
 
+name: TaskRaiseError
+
 ## *Task.raiseError*
 
 - corresponds to *Future.failed*
 
 - lifts a *Throwable* into the *Task* context (analogous to *Task.now*)
 
-- evaluates eagerly / immediately
+- evaluates eagerly / immediately, never spawning a separate thread
 
 - !!! Don't use it for computations and side effects, only for pure errors/exceptions !!!
 
@@ -969,6 +1056,8 @@ task runAsync printCallback
 
 ---
 
+name: TaskEvalOnce
+
 ## *Task.evalOnce*
 
 - corresponds to *Future.apply*
@@ -976,6 +1065,8 @@ task runAsync printCallback
 - evaluates a thunk lazily on the first run and memoizes/caches the result
 
 - is am impure function (due to memoization)
+
+- guarantees idempotency (just as *Future* does)
 
 - Task.evalOnce <--> Task.eval.memoize
 
@@ -998,6 +1089,8 @@ task runAsync printCallback
 
 ---
 
+name: TaskNever
+
 ## *Task.never*
 
 - creates a *Task* that never completes
@@ -1007,7 +1100,8 @@ task runAsync printCallback
 ```scala
 val never: Task[Int] = Task.never[Int]
 
-val timedOut: Task[Int] = never.timeoutTo(3.seconds, Task.raiseError(new TimeoutException))
+val timedOut: Task[Int] =
+      never.timeoutTo(3.seconds, Task.raiseError(new TimeoutException))
 
 implicit val scheduler: Scheduler = Scheduler.global
 
@@ -1017,6 +1111,8 @@ timedOut runAsync println
 ```
 
 ---
+
+name: TaskDefer
 
 ## *Task.defer* / *Task.suspend*
 
@@ -1025,15 +1121,51 @@ timedOut runAsync println
 - evaluates lazily
 
 ```scala
-val never: Task[Int] = Task.never[Int]
-
-val timedOut: Task[Int] = never.timeoutTo(3.seconds, Task.raiseError(new TimeoutException))
+val task = Task.defer {
+  println("side effect")
+  Task.now(42)
+}
 
 implicit val scheduler: Scheduler = Scheduler.global
 
-timedOut runAsync println
-// After 3 seconds:
-// => Left(java.util.concurrent.TimeoutException)
+task runAsync printCallback
+//=> side effect
+//=> 10946
+
+// The evaluation (and thus all contained side effects)
+// gets triggered on each run:
+task runAsync printCallback
+//=> side effect
+//=> 10946
+```
+
+---
+
+name: TaskEval
+
+## *Task.evalAsync*
+
+- evaluates a thunk lazily like *Task.eval*
+
+- guaranteed to spawn a separate "logical" thread
+
+- Task.evalAsync(a) <-> Task.eval(a).executeAsync
+
+- See also: [Async Boundaries](#AsyncBoundaries)
+
+```scala
+val task = Task.evalAsync {
+  println("side effect")
+  fibonacci(20)
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+// The evaluation (and thus all contained side effects)
+// gets triggered on each run - but it is run asynchronously
+task runAsync printCallback
+//=> side effect
+//=> 10946
 ```
 
 ---
@@ -1041,7 +1173,7 @@ timedOut runAsync println
 class: middle, center
 name: FutureToTask
 
-# 7. Converting Future to Task
+# 8. Converting Future to Task
 <br/>
 <br/>
 <br/>
@@ -1066,7 +1198,7 @@ name: FutureToTask
 class: middle, center
 name: Memoization
 
-# 8. Memoization
+# 9. Memoization
 <br/>
 <br/>
 <br/>
@@ -1077,9 +1209,9 @@ name: Memoization
 ---
 
 class: middle, center
-name: FlatMap
+name: TailRecursiveLoops
 
-# 9. FlatMap
+# 10. Tail Recursive Loops
 <br/>
 <br/>
 <br/>
@@ -1092,7 +1224,7 @@ name: FlatMap
 class: middle, center
 name: AsyncBoundaries
 
-# 10. Async Boundaries
+# 11. Async Boundaries
 <br/>
 <br/>
 <br/>

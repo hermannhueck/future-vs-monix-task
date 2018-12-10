@@ -1,20 +1,20 @@
-package ch06taskbuiders
+package ch07taskbuiders
 
 import monix.eval.Task
 import monix.execution.Scheduler
 
-object App01TaskEval extends App {
+object App07TaskDefer extends App {
 
   println(s"\n----- Main $currentThread")
 
-  val task = Task.eval {
+  val task = Task.defer {
     println(s"side effect in $currentThread")
-    fibonacci(20)
+    Task.now(42)
   }
 
   implicit val scheduler: Scheduler = Scheduler.global
 
-  task foreach println
+  task runAsync printCallback
   //=> side effect
   //=> 10946
 

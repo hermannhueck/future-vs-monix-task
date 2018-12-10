@@ -5,10 +5,10 @@ import monix.execution.Scheduler
 
 object App04aTaskForeach extends App {
 
-  println("\n-----")
+  println(s"\n----- Main $currentThread")
 
   val task: Task[Int] = Task {
-    println("side effect")
+    println(s"side effect in $currentThread")
     sumOfRange(0, 1000)
   }
 

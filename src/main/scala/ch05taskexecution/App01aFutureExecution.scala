@@ -5,11 +5,12 @@ import scala.util.{Failure, Success, Try}
 
 object App01aFutureExecution extends App {
 
-  println("\n-----")
+  println(s"\n----- Main $currentThread")
 
   implicit val ec: ExecutionContext = ExecutionContext.global
 
   val task: Future[Int] = Future {
+    println(s"Running on $currentThread")
     sumOfRange(0, 1000)
   }
   println(">>> Future started")

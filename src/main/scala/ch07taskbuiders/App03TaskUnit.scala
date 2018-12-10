@@ -1,4 +1,4 @@
-package ch06taskbuiders
+package ch07taskbuiders
 
 import monix.eval.Task
 import monix.execution.Scheduler

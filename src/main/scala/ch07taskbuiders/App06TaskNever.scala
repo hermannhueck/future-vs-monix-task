@@ -1,4 +1,4 @@
-package ch06taskbuiders
+package ch07taskbuiders
 
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -13,7 +13,8 @@ object App06TaskNever extends App {
   // A Task instance that never completes
   val never: Task[Int] = Task.never[Int]
 
-  val timedOut: Task[Int] = never.timeoutTo(3.seconds, Task.raiseError(new TimeoutException))
+  val timedOut: Task[Int] =
+        never.timeoutTo(3.seconds, Task.raiseError(new TimeoutException))
 
   implicit val scheduler: Scheduler = Scheduler.global
 

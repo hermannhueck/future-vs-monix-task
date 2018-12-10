@@ -6,12 +6,12 @@ import monix.execution.{CancelableFuture, Scheduler}
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
-object App03cBlockingWithFuture extends App {
+object App03bBlockingWithFuture extends App {
 
-  println("\n-----")
+  println(s"\n----- Main $currentThread")
 
   val task: Task[Int] = Task {
-    println("side effect")
+    println(s"side effect in $currentThread")
     sumOfRange(0, 1000)
   }.delayExecution(1.second)
 
