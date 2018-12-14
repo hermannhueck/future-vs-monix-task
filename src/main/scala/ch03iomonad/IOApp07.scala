@@ -59,7 +59,7 @@ object IOApp07 extends App {
   } yield ()
 
   // Running the program's encapsulated Function0 produces the side effects.
-  program.run()                                  // run sync
+  program.run()                                  // run sync, may throw an exception
 
   program.runToTry                               // run sync
 

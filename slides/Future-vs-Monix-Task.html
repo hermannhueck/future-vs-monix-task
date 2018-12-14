@@ -203,7 +203,6 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 ---
 
 # Agenda
-<br/>
 
 1. [What is Monix?](#WhatIsMonix)
 1. [Referential Transparency](#ReferentialTransparency)
@@ -215,6 +214,7 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 1. [Task Builders](#TaskBuilders)
 1. [Converting Future to Task](#FutureToTask)
 1. [Memoization](#Memoization)
+1. [Task as Monad](#TaskAsMonad)
 1. [Tail Recursive Loops](#TailRecursiveLoops)
 1. [Async Boundaries](#AsyncBoundaries)
 1. [Resources](#Resources)
@@ -295,14 +295,17 @@ https://en.wikipedia.org/wiki/Referential_transparency
 
 ---
 
-class: xlarge-font
+class: large-font
 
 ## RT Benefits
 <br/>
 
-- Equational reasoning about the code
+- (Mathematical) Reasoning about code
 - Refactoring is easier
 - Testing is easier
+- Separate pure code from impure code
+- Potential compiler optimizations (more in Haskell than in Scala)<br/>
+  (e.g. memoization, parallelization, compute expressions at compile time)
 
 .footnote[
 https://www.youtube.com/watch?v=X-cEGEJMx_4
@@ -323,7 +326,7 @@ name: IOMonad
 
 ---
 
-## IO Program with side effects
+## IO Program <u>with</u> side effects
 <br/>
 
 ```scala
@@ -337,14 +340,15 @@ program()
 ```
 <br/>
 
-- Whenever a method or a function returns *Unit*<br/>
-it's intension is to produce a side effect.
+- Whenever a method or a function returns *Unit* it is <u>***impure***.</u><br/>
+It's intension is to produce a side effect.
 
-- A <u>___pure___</u> function always returns a value of some type.
+- A <u>***pure***</u> function always returns a value of some type<br/>
+  (and doesn't produce a side effect inside).
 
 ---
 
-## IO Program (based on *Function0[A]*)<br/>without side effects
+## IO Program (based on *Function0[A]*)<br/><u>without</u> side effects
 <br/>
 
 ```scala
@@ -361,7 +365,9 @@ program()    // producing the side effects "at the end of the world"
 
 - A function returning *Unit*
 
-- Produces side effect only when run.
+- Free of side effects in it's definition
+
+- Produces side effect only when run
 
 ---
 
@@ -464,14 +470,13 @@ case class IO[A](run: () => A) {
 ```
 
 ```scala
-program.run()                                  // run sync
+program.run()                                  // run sync, may throw an exception
 
 program.runToTry                               // run sync
 
 program.runToEither                            // run sync
 
 implicit val ec: ExecutionContext = ExecutionContext.global
-
 program.runToFuture                            // run async
 ```
 
@@ -479,7 +484,7 @@ program.runToFuture                            // run async
 
 class: middle, center, large-font
 
-## Monix Task is the IO Monad
+## Monix Task is the <u>IO Monad</u>
 
 ... a bit more sophisticated than my implementation.
 
@@ -487,7 +492,7 @@ class: middle, center, large-font
 
 But it can also be seen as ...
 
-## a delayed Future.
+## a <u>delayed Future</u>.
 
 ---
 
@@ -1553,9 +1558,22 @@ object library {
 ---
 
 class: middle, center
+name: TaskAsMonad
+
+# 10. Task as Monad
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
 name: TailRecursiveLoops
 
-# 10. Tail Recursive Loops
+# 11. Tail Recursive Loops
 <br/>
 <br/>
 <br/>
@@ -1568,7 +1586,7 @@ name: TailRecursiveLoops
 class: middle, center
 name: AsyncBoundaries
 
-# 11. Async Boundaries
+# 12. Async Boundaries
 <br/>
 <br/>
 <br/>

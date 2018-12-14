@@ -43,4 +43,21 @@ trait Tools {
 
     def onError(ex: Throwable): Unit = println(s"ERROR: ${ex.toString}")
   }
+
+
+  def wordCount(limit: Int): List[String] => List[(String, Int)] = { lines =>
+    // println("-->> wordCount")
+    lines.mkString
+      .toLowerCase
+      .split("\\W+")
+      .toList
+      .map(_.filter(c => c.isLetter))
+      .filter(_.length > 3)
+      .groupBy(s => s)
+      .mapValues(_.length)
+      .toList
+      .filter(_._2 > limit) // return only words with occurences > limit
+      .sortWith(_._2 > _._2)
+  }
+
 }

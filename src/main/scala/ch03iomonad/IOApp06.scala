@@ -43,14 +43,14 @@ object IOApp06 extends App {
   } yield ()
 
   // Running the program's encapsulated Function0 produces the side effects.
-  program.run()
+  program.run()                                  // run sync, may throw an exception
 
-  program.runToTry
+  program.runToTry                               // run sync
 
-  program.runToEither
+  program.runToEither                            // run sync
 
   implicit val ec: ExecutionContext = ExecutionContext.global
-  program.runToFuture
+  program.runToFuture                            // run async
 
   Thread.sleep(200L)
   println("-----\n")
