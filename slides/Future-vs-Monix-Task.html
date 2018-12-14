@@ -144,6 +144,22 @@
       .xlarge-font {
         font-size: 1.75em
       }
+
+      table {
+        font-family: arial, sans-serif;
+        border-collapse: collapse;
+        width: 100%;
+      }
+
+      td, th {
+        border: 1px solid #dddddd;
+        text-align: left;
+        padding: 8px;
+      }
+
+      tr:nth-child(odd) {
+        background-color: #dddddd;
+      }
     </style>
   </head>
   <body>
@@ -189,10 +205,11 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 # Agenda
 <br/>
 
+1. [What is Monix?](#WhatIsMonix)
 1. [Referential Transparency](#ReferentialTransparency)
 1. [The IO Monad](#IOMonad)
 1. [Is Future referentially transparent?](#FutureReferentiallyTransparent)
-1. [Comparison of Features](#Comparison)
+1. [Comparison of Features](#ComparisonOfFeatures)
 1. [Task Execution](#TaskExecution)
 1. [Task Cancelation](#TaskCancelation)
 1. [Task Builders](#TaskBuilders)
@@ -205,9 +222,9 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 ---
 
 class: middle, center
-name: ReferentialTransparency
+name: WhatIsMonix
 
-# 1. Referential Transparency
+# 1. What is Monix?
 <br/>
 <br/>
 <br/>
@@ -217,12 +234,55 @@ name: ReferentialTransparency
 
 ---
 
-class: large-font
+## Monix 3.x
 
+- library for asynchronous computations in Scala
+
+- dependent on: Cats, Cats Effect
+
+### Monix provides in different sub-projects/packages:
+
+- *monix.execution.Scheduler*: which extends *scala.concurrrent.ExecutionContext*
+
+- *monix.eval.Task*: an abstaction for possibly asynchronously evaluated effects
+
+- *monix.eval.Coeval*: an abstaction for synchronous effects
+
+- *monix.reactive.{Observable, Observer, Subscriber, Consumer}*: a push-based streaming library (compatible with the *reactivestreams.org* spec)
+
+- *monix.tail.Iterant*: a pull-based streaming library (compatible with the *reactivestreams.org* spec)
+
+---
+
+## Monix Task
+<br/>
+
+- inspired by: Haskell's IO Monad, Scalaz Task
+
+- implementation of the IO Monad for Scala
+
+- lazy and referentially transparent alternative for *scala.concurrrent.Future*
+
+- very good interop with *scala.concurrrent.Future*
+
+---
+
+class: middle, center
+name: ReferentialTransparency
+
+# 2. Referential Transparency
 <br/>
 <br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: xlarge-font
+
 ## Referential Transparency
-<br/>
 <br/>
 
 An expression is called referentially transparent if it can be replaced with its corresponding value
@@ -235,24 +295,25 @@ https://en.wikipedia.org/wiki/Referential_transparency
 
 ---
 
-class: large-font
+class: xlarge-font
 
-<br/>
-<br/>
-## Benefits of Referential Transparency
-<br/>
+## RT Benefits
 <br/>
 
 - Equational reasoning about the code
 - Refactoring is easier
 - Testing is easier
 
+.footnote[
+https://www.youtube.com/watch?v=X-cEGEJMx_4
+]
+
 ---
 
 class: middle, center
 name: IOMonad
 
-# 2. The IO Monad
+# 3. The IO Monad
 <br/>
 <br/>
 <br/>
@@ -266,8 +327,6 @@ name: IOMonad
 <br/>
 
 ```scala
-// program definition WITH side effects.
-//
 def program(): Unit = {
   print("Welcome to Scala!  What's your name?   ")
   val name = scala.io.StdIn.readLine
@@ -278,20 +337,17 @@ program()
 ```
 <br/>
 
-Whenever a method or a function returns Unit <br/>
+- Whenever a method or a function returns *Unit*<br/>
 it's intension is to produce a side effect.
 
-A <u>___pure___</u> function always returns a value of some type.
+- A <u>___pure___</u> function always returns a value of some type.
 
 ---
 
-## IO Program (based on Function0[A])<br/>without side effects
+## IO Program (based on *Function0[A]*)<br/>without side effects
 <br/>
 
 ```scala
-// Program definition WITHOUT side effects. This program does nothing.
-// It is just a Function0[Unit].
-//
 val program: () => Unit =  // () => Unit  is syntactic sugar for:  Function0[Unit]
   () => {
     print("Welcome to Scala!  What's your name?   ")
@@ -299,27 +355,23 @@ val program: () => Unit =  // () => Unit  is syntactic sugar for:  Function0[Uni
     println(s"Well hello, $name!")
   }
 
-// Running the program produces the side effects.
-program()
+program()    // producing the side effects "at the end of the world"
 ```
 <br/>
 
-This is a function returning Unit.<br/>
-It produces a side effect only when run.
+- A function returning *Unit*
+
+- Produces side effect only when run.
 
 ---
 
-## IO Program (based on IO[A])<br/>without side effects
+## IO Program (based on *IO[A]*)<br/>without side effects
 
 ```scala
-// IO[A] wraps a Function0[A]
 case class IO[A](run: () => A)
 ```
 
 ```scala
-// Program definition WITHOUT side effects. This program does nothing.
-// It is just a Function0[Unit] wrapped in IO.
-//
 val program: IO[Unit] = IO {
   () => {
     print("Welcome to Scala!  What's your name?   ")
@@ -328,21 +380,17 @@ val program: IO[Unit] = IO {
   }
 }
 
-// Running the program's encapsulated Function0 produces the side effects.
-program.run()
+program.run()    // producing the side effects "at the end of the world"
 ```
 <br/>
 
-IO[A] just wraps a Function0[A] in a case class.
+- *IO[A]* wraps a *Function0[A]* in a case class.
 
 ---
 
 ## Monadic IO Program without side effects
 
 ```scala
-// IO[A] is a Monad wrapping a Function0[A].
-// With map and flatMap it is usable in a for-comprehension.
-//
 case class IO[A](run: () => A) {
   def map[B](f: A => B): IO[B] = IO { () => f(run()) }
   def flatMap[B](f: A => IO[B]): IO[B] = f(run())
@@ -350,30 +398,23 @@ case class IO[A](run: () => A) {
 ```
 
 ```scala
-// Program definition WITHOUT side effects. This program does nothing.
-// It is just a bunch of monadically composed functions which do not execute.
-//
 val program: IO[Unit] = for {
   _       <- IO { () => print(s"Welcome to Scala!  What's your name?   ") }
   name    <- IO { () => scala.io.StdIn.readLine }
   _       <- IO { () => println(s"Well hello, $name!") }
 } yield ()
 
-// Running the program's encapsulated Function0 produces the side effects.
-program.run()
+program.run()    // producing the side effects "at the end of the world"
 ```
-<br/>
+<br>
 
-With _map_ and _flatMap_ _IO_ is monadic and ready for for-comprehensions.
+- With _map_ and _flatMap_ _IO[A]_ is monadic and ready for for-comprehensions.
 
 ---
 
 ## Monadic IO Program without side effects
 
 ```scala
-// IO[A] is a Monad wrapping a Function0[A].
-// With map and flatMap it is usable in a for-comprehension.
-//
 case class IO[A](run: () => A) {
   def map[B](f: A => B): IO[B] = IO { () => f(run()) }
   def flatMap[B](f: A => IO[B]): IO[B] = f(run())
@@ -396,9 +437,11 @@ val program: IO[Unit] = for {
   _       <- IO.eval { println(s"Well hello, $name!") }
 } yield ()
 
-// Running and producing the side effects "at the end of the world".
-program.run()
+program.run()    // producing the side effects "at the end of the world"
 ```
+<br>
+
+- *pure* and *eval* simplify the for-comprehension.
 
 ---
 
@@ -412,13 +455,10 @@ case class IO[A](run: () => A) {
 
   // ----- different impure run* methods to be run at the end of the world
 
-  // runs on the current Thread returning Try[A]
   def runToTry: Try[A] = Try { run() }
 
-  // runs on the current Thread returning Either[Throwable, A]
   def runToEither: Either[Throwable, A] = runToTry.toEither
 
-  // returns a Future that runs the task eagerly on another thread
   def runToFuture(implicit ec: ExecutionContext): Future[A] = Future { run() }
 }
 ```
@@ -454,7 +494,7 @@ But it can also be seen as ...
 class: middle, center
 name: FutureReferentiallyTransparent
 
-# 3. Is Future referentially transparent?
+# 4. Is Future referentially transparent?
 <br/>
 <br/>
 <br/>
@@ -477,6 +517,10 @@ val future1: Future[(Int, Int)] = {
   } yield (x, y)
 }
 
+future1 onComplete println     // Success((1,1))
+```
+
+```scala
 // same as future1, but inlined
 val future2: Future[(Int, Int)] = {
   val atomicInt = new AtomicInteger(0)
@@ -486,7 +530,6 @@ val future2: Future[(Int, Int)] = {
   } yield (x, y)
 }
 
-future1 onComplete println     // Success((1,1))
 future2 onComplete println     // Success((1,2))    <-- not the same result
 ```
 
@@ -505,7 +548,11 @@ val task1: Task[(Int, Int)] = {
   } yield (x, y)
 }
 
-// same as future1, but inlined
+task1 runAsync println     // Success((1,2))
+```
+
+```scala
+// same as task1, but inlined
 val task2: Task[(Int, Int)] = {
   val atomicInt = new AtomicInteger(0)
   for {
@@ -514,16 +561,15 @@ val task2: Task[(Int, Int)] = {
   } yield (x, y)
 }
 
-task1 runAsync println     // Success((1,2))
 task2 runAsync println     // Success((1,2))    <-- same result
 ```
 
 ---
 
 class: middle, center
-name: Comparison
+name: ComparisonOfFeatures
 
-# 4. Comparison of Features
+# 5. Comparison of Features
 <br/>
 <br/>
 <br/>
@@ -534,13 +580,9 @@ name: Comparison
 ---
 
 ## Comparison of Features
-<br/>
 
 <table>
-  <thead>
     <tr> <th></th><th><u>Future</u></th><th><u>Task</u></th> </tr>
-  </thead>
-  <tbody>
     <tr> <td>Evaluation</td><td>eager / strict</td><td>lazy / non-strict</td> </tr>
     <tr> <td>Memoization</td><td>always</td><td>possible, default: no</td> </tr>
     <tr> <td>Referential Transparency &nbsp;</td><td>no</td><td>yes</td> </tr>
@@ -549,11 +591,9 @@ name: Comparison
     <tr> <td>Supports sync execution</td><td>no</td><td>yes</td> </tr>
     <tr> <td>Runs on an other thread</td><td>always</td><td>not necessarily</td> </tr>
     <tr> <td>Supports green threads</td><td>no</td><td>yes</td> </tr>
-    <tr> <td>Requires implicit ...</td><td>ExecutionContext ...</td><td>Scheduler ...</td> </tr>
-    <tr> <td></td><td>for nearly every method</td><td>only when run</td> </tr>
+    <tr> <td>Requires implicit ...</td><td>ExecutionContext<br/>(for nearly every method)</td><td>Scheduler<br/>(only when run)</td> </tr>
     <tr> <td>Stack Safety</td><td>no</td><td>yes (due to trampolining)</td> </tr>
     <tr> <td>Supports ScalaJS</td><td>yes</td><td>yes</td> </tr>
-  </tbody>
 </table>
 
 ---
@@ -561,7 +601,7 @@ name: Comparison
 class: middle, center
 name: TaskExecution
 
-# 5. Task Execution
+# 6. Task Execution
 <br/>
 <br/>
 <br/>
@@ -595,7 +635,8 @@ import monix.execution.Scheduler.Implicits.global
 or create an implicit instance ...
 
 ```scala
-implicit val scheduler: Scheduler = monix.execution.Scheduler.global
+import monix.execution.Scheduler.global
+implicit val scheduler: Scheduler = Scheduler.global
 ```
 
 --
@@ -619,14 +660,14 @@ implicit val scheduler: Scheduler = monix.execution.Scheduler.global
 
 --
 
-*Future* is eager. It starts running when you create it.
+- *Future* is eager. It starts running when you create it.
 
 ```scala
 implicit val ec: ExecutionContext = ExecutionContext.global
+                                                    // needs EC to create Future
+val task: Future[Int] = Future { compute }          // starts running HERE!
 
-val task: Future[Int] = Future { compute }            // starts running HERE!
-
-val callback: Try[Int] => Unit = {                    // Try based callback
+val callback: Try[Int] => Unit = {                  // Try based callback
   case Success(result) => println(s"result = $result")
   case Failure(ex) => println(s"ERROR: ${ex.getMessage}")
 }
@@ -636,28 +677,28 @@ task onComplete callback
 
 --
 
-*Task* is a function, hence it is lazy. By it's creation nothing is run.
+- *Task* is a function, hence lazy. By it's creation nothing is run.
 
 ```scala
 val task: Task[Int] = Task { compute }
 
-val callback: Either[Throwable, Int] => Unit = {      // Either based callback
+val callback: Either[Throwable, Int] => Unit = {    // Either based callback
   case Right(result) => println(s"result = $result")
   case Left(ex) => println(s"ERROR: ${ex.getMessage}")
 }
 
 implicit val scheduler: Scheduler = Scheduler.global
-
-task runAsync callback                                // starts running HERE!
+                                                    // needs Scheduler to run Task
+task runAsync callback                              // starts running HERE!
 ```
 
 ---
 
 ## Two flavours of *Callback*
 
-Both are *Either* based.
-
 --
+
+- Both are *Either* based.
 
 ```scala
 val callback: Either[Throwable, Int] => Unit = {
@@ -665,8 +706,6 @@ val callback: Either[Throwable, Int] => Unit = {
   case Left(ex) => println(s"ERROR: ${ex.getMessage}")
 }
 ```
-
---
 
 ```scala
 val callback: Callback[Throwable, Int] = new Callback[Throwable, Int] {
@@ -677,9 +716,7 @@ val callback: Callback[Throwable, Int] = new Callback[Throwable, Int] {
 
 --
 
-A *Callback* is a subclass of a function of type (Either[E, A] => Unit).
-
---
+- A *Callback* is a subclass of a function of type (Either[E, A] => Unit).
 
 ```scala
 package monix.execution
@@ -696,13 +733,9 @@ abstract class Callback[-E, -A] extends (Either[E, A] => Unit) {
 
 ## Converting *Task* to *Future*
 
---
+- *Task#runToFuture* turns a *Task* into a *Future* and runs it.
 
-*Task#runToFuture* turns a *Task* into a *Future* and runs it.
-
---
-
-A *Scheduler* is required in implicit scope.
+- A *Scheduler* is required in implicit scope.
 
 --
 
@@ -726,19 +759,13 @@ future onComplete callback
 ---
 
 ## *Task* cannot be blocked (directly)
-<br/>
+
+- The API of *Task* doesn't support any means to wait for a result.
+
+- But (if really needed) we can convert *Task* to *Future* and wait for the Future's result to become available.
 
 --
 
-The API of *Task* doesn't support any means to wait for a result.
-
---
-
-But we can convert *Task* to *Future* and wait for the Future's result to become available.
-
---
-
-<br/>
 ```scala
 val task: Task[Int] = Task {
   compute
@@ -756,39 +783,55 @@ println(s"result = $result")
 
 ## *Task#foreach*
 
---
+- corresponds to *Future#foreach
 
-*Task#foreach* runs the *Task*.
+- *Task#foreach* runs the *Task*.
 
---
-
-It processes the result, but swallows possible errors.
+- It processes the result, but swallows possible errors.
 
 --
 
-<br/>
 ```scala
 val task: Task[Int] = Task {
-  compute // successfully returns an Int value
+  compute                      // returns an Int or throws an exception
 }
 
 implicit val scheduler: Scheduler = Scheduler.global
 
 task foreach { result => println(s"result = $result") }
-// computed value is printed
+
+// prints computed value in case of success
+// prints nothing value in case of error
 ```
 
+- Use *foreach* only if the *Task* is guaranteed not to throw an *Exception*.
+
+---
+
+## *Task#failed*
+
+- corresponds to *Future#failed
+
+- Returns a failed projection of the current *Task*.
+
+- If the source fails we get a *Task[Throwable]* containing the error.<br/>
+If the source *Task* succeeds we get a *NoSuchElementException*.
+
 --
 
 ```scala
 val task: Task[Int] = Task {
-  compute // throws an Exception
+  throw new IllegalStateException("illegal state")
 }
+
+val failed: Task[Throwable] = task.failed
 
 implicit val scheduler: Scheduler = Scheduler.global
 
-task foreach { result => println(s"result = $result") }
-// no error is spit out
+task foreach println
+// prints nothing
+failed foreach println
+// prints: java.lang.IllegalStateException: illegal state
 ```
 
 ---
@@ -796,7 +839,7 @@ task foreach { result => println(s"result = $result") }
 class: middle, center
 name: TaskCancelation
 
-# 6. Task Cancelation
+# 7. Task Cancelation
 <br/>
 <br/>
 <br/>
@@ -808,9 +851,7 @@ name: TaskCancelation
 
 ## Canceling a *Task*
 
---
-
-*Future* cannot be canceled, but *Task* can.
+- *Future* cannot be canceled, but *Task* can.
 
 --
 
@@ -833,9 +874,12 @@ val cancelable: Cancelable = task runAsync callback
 cancelable.cancel()
 ```
 
---
+---
 
-A *Cancelable* just has a method *cancel*.
+## *Cancelable* & *CancelableFuture*
+
+A *Cancelable* is a trait with a *cancel* method.
+
 ```scala
 package monix.execution
 
@@ -844,15 +888,9 @@ trait Cancelable extends Serializable {
 }
 ```
 
----
-
-## *CancelableFuture*
-
 --
 
-*CancelableFuture* is a *Future* with a *cancel* method.
-
---
+- *CancelableFuture* is a *(Future with Cancelable)*, hence a *Future* augmented with a *cancel* method.
 
 ```scala
 package monix.execution
@@ -862,25 +900,27 @@ sealed abstract class CancelableFuture[+A] extends Future[A] with Cancelable {
 }
 ```
 
---
+---
 
-*Task#runtToFuture* returns a *CancelableFuture*.
+## Canceling a *Future*
+
+- *Task#runToFuture* returns a *CancelableFuture*.
 
 --
 
 ```scala
-val task: Task[Int] = Task { compute }.delayExecution(1.second)
+val task: Task[Int] = Task {
+  compute
+}.delayExecution(1.second)
 
 implicit val scheduler: Scheduler = Scheduler.global
 
 val future: CancelableFuture[Int] = task.runToFuture
 
-val callback: Try[Int] => Unit = {
+future onComplete {
   case Success(result) => println(s"result = $result")
   case Failure(ex) => println(s"ERROR: ${ex.getMessage}")
 }
-
-future onComplete callback
 
 // If we change our mind...
 future.cancel()
@@ -889,9 +929,142 @@ future.cancel()
 ---
 
 class: middle, center
+name: Memoization
+
+# 8. Memoization
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+## Memoization - Overview
+
+--
+
+```scala
+// non-strict + memoized evaluation - equivalent to a lazy val
+val task = Task.eval { println("side effect"); "some value" }
+val memoized = task.memoize
+```
+
+--
+
+```scala
+// non-strict + memoized evaluation - equivalent to a lazy val
+Task.evalOnce { println("side effect"); "memoized" }
+```
+
+--
+
+```scala
+// memoized only if successful
+val task = Task.eval { println("side effect"); "some value" }
+val memoizedIfSuccessful = task.memoizeOnSuccess
+```
+
+--
+
+.footnote[
+[Skip details](#TaskBuilders)
+]
+
+---
+
+## *Task#memoize*
+
+- memoizes (caches) the *Task*'s result on the first run (like a *lazy val*)
+
+- is impure, as memoization is a side effect
+
+- guarantees idempotency
+
+--
+
+```scala
+val task = Task {
+  println("side effect")
+  fibonacci(20)
+}
+
+val memoized = task.memoize
+
+memoized runAsync printCallback
+//=> side effect
+//=> 10946
+
+// Result was memoized on the first run!
+memoized runAsync printCallback
+//=> 10946
+```
+
+---
+
+## *Task.evalOnce*
+
+- evaluates a thunk lazily on the first run and memoizes/caches the result
+
+- is impure, as memoization is a side effect
+
+- guarantees idempotency
+
+- *Task.evalOnce { thunk }* <-> *Task { thunk }.memoize*
+
+--
+
+```scala
+val task = Task.evalOnce {
+  println("side effect")
+  fibonacci(20)
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task runAsync printCallback
+//=> side effect
+//=> 10946
+
+// Result was memoized on the first run!
+task runAsync printCallback
+//=> 10946
+```
+
+---
+
+## *Task#memoizeOnSuccess*
+
+- memoizes (caches) the *Task*'s result on the first run only if it succeeds
+
+- is impure, as memoization is a side effect
+
+--
+
+```scala
+var effect = 0
+
+val source = Task.eval {
+  println("side effect")
+  effect += 1
+  if (effect < 3) throw new RuntimeException("dummy") else effect
+}
+
+val cached = source.memoizeOnSuccess
+
+cached runAsync printCallback   //=> java.lang.RuntimeException: dummy
+cached runAsync printCallback   //=> java.lang.RuntimeException: dummy
+cached runAsync printCallback   //=> 3
+cached runAsync printCallback   //=> 3
+```
+
+---
+
+class: middle, center
 name: TaskBuilders
 
-# 7. Task Builders
+# 9. Task Builders
 <br/>
 <br/>
 <br/>
@@ -960,6 +1133,8 @@ name: TaskEval
 
 - evaluates a thunk lazily
 
+--
+
 ```scala
 val task = Task.eval {
   println("side effect")
@@ -993,12 +1168,14 @@ name: TaskNow
 
 - !!! Don't use it for computations and side effects, only for pure values !!!
 
+--
+
 ```scala
 val task = Task.now {
-  println("side effect")              // NO SIDE EFFECTS in Task.now !!!
+  println("(eagerly produced) side effect; DON'T DO THAT !!")
   42
 }
-//=> side effect
+//=> (eagerly produced) side effect; DON'T DO THAT !!
 
 implicit val scheduler: Scheduler = Scheduler.global
 
@@ -1012,11 +1189,15 @@ name: TaskUnit
 
 ## *Task.unit*
 
+- corresponds to *Future.unit*
+
 - lifts a pure Unit value into the *Task* context
 
 - evaluates eagerly / immediately, never spawning a separate thread
 
 - Task.unit <-> Task.now(())
+
+--
 
 ```scala
 val task: Task[Unit] = Task.unit
@@ -1041,12 +1222,14 @@ name: TaskRaiseError
 
 - !!! Don't use it for computations and side effects, only for pure errors/exceptions !!!
 
+--
+
 ```scala
 val task = Task.raiseError {
-  println("side effect")              // NO SIDE EFFECTS in Task.raiseError !!!
+  println("(eagerly produced) side effect; DON'T DO THAT !!")
   new IllegalStateException("illegal state")
 }
-//=> side effect
+//=> (eagerly produced) side effect; DON'T DO THAT !!
 
 implicit val scheduler: Scheduler = Scheduler.global
 
@@ -1064,11 +1247,13 @@ name: TaskEvalOnce
 
 - evaluates a thunk lazily on the first run and memoizes/caches the result
 
-- is am impure function (due to memoization)
+- is impure, as memoization is a side effect
 
-- guarantees idempotency (just as *Future* does)
+- guarantees idempotency
 
 - Task.evalOnce <--> Task.eval.memoize
+
+--
 
 ```scala
 val task = Task.evalOnce {
@@ -1093,9 +1278,13 @@ name: TaskNever
 
 ## *Task.never*
 
+- corresponds to *Future.never*
+
 - creates a *Task* that never completes
 
 - evaluates lazily
+
+--
 
 ```scala
 val never: Task[Int] = Task.never[Int]
@@ -1119,6 +1308,10 @@ name: TaskDefer
 - takes a (possibly eager) *Task* and turns it into a lazy *Task* of the same type.
 
 - evaluates lazily
+
+- *Task.defer(Task.now(value))* <-> Task.eval(value)
+
+--
 
 ```scala
 val task = Task.defer {
@@ -1153,6 +1346,8 @@ name: TaskEval
 
 - See also: [Async Boundaries](#AsyncBoundaries)
 
+--
+
 ```scala
 val task = Task.evalAsync {
   println("side effect")
@@ -1162,7 +1357,8 @@ val task = Task.evalAsync {
 implicit val scheduler: Scheduler = Scheduler.global
 
 // The evaluation (and thus all contained side effects)
-// gets triggered on each run - but it is run asynchronously
+// gets triggered on each run.
+// But it is run asynchronously on a different "logical" thread.
 task runAsync printCallback
 //=> side effect
 //=> 10946
@@ -1183,28 +1379,176 @@ name: FutureToTask
 
 ---
 
+## *Future* to *Task* - Overview
+
+--
+
+```scala
+// --- SOME LIBRARY ---
+private def compute: Int = ???     // compute Int value
+
+// compute Int value async - library code returns a Future
+def computeAsync(implicit ec: ExecutionContext): Future[Int] = Future { compute }
+```
+
+--
+
+```scala
+// converts a *Future* to a effectively memoized *Task*. Strict evaluation !!!
+import monix.execution.Scheduler.Implicits.global
+val task = Task.fromFuture(computeAsync) // needs an EC
+```
+
+--
+
+```scala
+// converts a *Future* to a lazy *Task*. Non-strict evaluation !!!
+import monix.execution.Scheduler.Implicits.global
+val task = Task.defer(Task.fromFuture(computeAsync)) // needs an EC
+```
+
+--
+
+```scala
+// converts a *Future* to a lazy *Task*. Non-strict evaluation !!!
+import monix.execution.Scheduler.Implicits.global
+val task = Task.deferFuture(computeAsync) // needs an EC
+```
+
+--
+
+```scala
+// converts a *Future* to a lazy *Task*. Non-strict evaluation !!!
+val task = Task.deferFutureAction(implicit scheduler => computeAsync)
+// Scheduler is required when the task is run.
+```
+
+--
+
+[Skip details](#TailRecursiveLoops)
+
+---
+
 ## *Task.fromFuture*
+
+- converts a *Future* to a effectively memoized *Task*. **Strict** evaluation !!!
+
+- The *Future* starts running eagerly, before *Task.fromFuture* is invoked.
+
+- An implicit *ExecutionContext* or *Scheduler* must be provided.
+
+--
+
+```scala
+object library {
+  def futureFactorial(n: Int)(implicit ec: ExecutionContext): Future[BigInt] =
+    Future { println("side effect"); factorial(n) }
+}
+
+  import library._
+  import Scheduler.Implicits.global
+
+  // Future created before Task.fromFuture is invoked
+  // Hence the Future is already running before we convert it to a Task
+  val task = Task.fromFuture(futureFactorial(10))
+  //=> side effect
+
+  task foreach println
+  //=> 3628800
+```
+
+---
+
+## *Task.defer* & *Task.fromFuture*
+
+- converts a *Future* into a lazy *Task*. **Non-strict**/lazy evaluation !!!
+
+- *Task.defer* effectively creates a function which - when invoked - will create the *Future*.
+
+- The *Future* doesn't start running (unless created outside *Task.defer*).
+
+- An implicit *ExecutionContext* or *Scheduler* must be provided.
+
+--
+
+```scala
+object library {
+  def futureFactorial(n: Int)(implicit ec: ExecutionContext): Future[BigInt] =
+    Future { println("side effect"); factorial(n) }
+}
+
+  import library._
+  import Scheduler.Implicits.global
+
+  val task = Task.defer {
+    Task.fromFuture(futureFactorial(10))
+  }
+
+  task foreach println
+  //=> side effect
+  //=> 3628800
+```
 
 ---
 
 ## *Task.deferFuture*
 
+- converts a *Future* into a lazy *Task*. **Non-strict**/lazy evaluation !!!
+
+- *Task.deferFuture(f)* <-> *Task.defer(Task.fromFuture(f))*
+
+- The *Future* doesn't start running (unless created outside *Task.deferFuture*)..
+
+- An implicit *ExecutionContext* or *Scheduler* must be provided.
+
+--
+
+```scala
+object library {
+  def futureFactorial(n: Int)(implicit ec: ExecutionContext): Future[BigInt] =
+    Future { println("side effect"); factorial(n) }
+}
+
+  import library._
+  import Scheduler.Implicits.global
+
+  val task = Task.deferFuture(futureFactorial(10)
+
+  task foreach println
+  //=> side effect
+  //=> 3628800
+```
+
 ---
 
 ## *Task.deferFutureAction*
 
----
+- converts a *Future* into a lazy *Task*. **Non-strict**/lazy evaluation !!!
 
-class: middle, center
-name: Memoization
+- The *Future* doesn't start running (unless created outside *Task.deferFutureAction*)..
 
-# 9. Memoization
-<br/>
-<br/>
-<br/>
-<br/>
-<br/>
-&nbsp;
+- **No** implicit *ExecutionContext* or *Scheduler* must be provided.
+
+- An implicit *Scheduler* must be provided when the task is run.
+
+--
+
+```scala
+object library {
+  def futureFactorial(n: Int)(implicit ec: ExecutionContext): Future[BigInt] =
+    Future { println("side effect"); factorial(n) }
+}
+
+  import library._
+  
+  val task = Task.deferFutureAction(implicit scheduler => futureFactorial(10))
+
+  import Scheduler.Implicits.global
+
+  task foreach println
+  //=> side effect
+  //=> 3628800
+```
 
 ---
 

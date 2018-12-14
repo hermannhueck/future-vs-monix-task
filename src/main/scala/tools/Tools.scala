@@ -17,10 +17,10 @@ trait Tools {
       b
   }
 
-  def factorial(n: Int): Int = {
+  def factorial(n: Int): BigInt = {
 
     @tailrec
-    def fac(n2: Int, acc: Int): Int =
+    def fac(n2: Int, acc: BigInt): BigInt =
       if (n2 == 0)
         acc
       else
@@ -29,7 +29,7 @@ trait Tools {
     if (n < 0)
       throw new IllegalArgumentException("factorial of $n not defined")
     else
-      fac(n, 1)
+      fac(n, BigInt(1))
   }
 
   def currentThread: String = "Thread: " + Thread.currentThread.getName
