@@ -195,10 +195,17 @@ https://github.com/hermannhueck/future-vs-monix-task
 
 scala.concurrent.Future is familiar to most Scala devs.
 
-This presentation compares Future with monix.eval.Task (Monix 3.x)
+This presentation first talks about referential transparency and the IO Monad.
+
+Then it compares Future with monix.eval.Task (Monix 3.x)
 with their Pros and Cons.
 
-It gives an introduction to Monix Task and deals with the interop between the two.
+As Scala's *Future* is used in many ennvironments and libraries, we look at
+how *Future* can be converted to *Task* and - vice versa - how *Task* to *Future*.
+
+Often recurring on the valuable Monix *Task* doumentation at<br/>
+https://monix.io/docs/3x/eval/task.html<br/>
+the presentation also gives an introduction to Monix Task.
 
 ---
 
@@ -217,6 +224,11 @@ It gives an introduction to Monix Task and deals with the interop between the tw
 1. [Task as Monad](#TaskAsMonad)
 1. [Tail Recursive Loops](#TailRecursiveLoops)
 1. [Async Boundaries](#AsyncBoundaries)
+1. [Error Handling](#ErrorHandling)
+1. [Schedulers](#Schedulers)
+1. [Races](#Races)
+1. [Parallelizm](#Parallelizm)
+1. [CompletableFuture](#CompletableFuture)
 1. [Resources](#Resources)
 
 ---
@@ -1597,9 +1609,74 @@ name: AsyncBoundaries
 ---
 
 class: middle, center
+name: ErrorHandling
+
+# 13. Error Handling
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
+name: Schedulers
+
+# 14. Schedulers
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
+name: Races
+
+# 15. Races
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
+name: Parallelizm
+
+# 16. Parallelizm
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
+name: CompletableFuture
+
+# 17. CompletableFuture
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
 name: Resources
 
-# 12. Resources
+# 18. Resources
 <br/>
 <br/>
 <br/>

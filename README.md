@@ -1,15 +1,24 @@
 # Future vs. Monix Task
 
 This repo contains code & slides for my talk on this topic.
+<br/>
+<br/>
 
 scala.concurrent.Future is familiar to most Scala devs.
 
-This presentation compares Future with monix.eval.Task (Monix 3.x)
+This presentation first talks about referential transparency and the IO Monad.
+
+Then it compares Future with monix.eval.Task (Monix 3.x)
 with their Pros and Cons.
 
-It gives an introduction to Monix Task and deals with the interop between the two.
+As Scala's *Future* is used in many ennvironments and libraries, we look at
+how *Future* can be converted to *Task* and - vice versa - how *Task* to *Future*.
 
-Work in progress ...
+Often recurring on the valuable Monix *Task* doumentation at<br/>
+https://monix.io/docs/3x/eval/task.html<br/>
+the presentation also gives an introduction to Monix Task.
+<br/>
+<br/>
 
 ## Resources
 
