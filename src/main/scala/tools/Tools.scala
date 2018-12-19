@@ -1,8 +1,12 @@
 package tools
 
+import java.net.URL
+
 import monix.execution.Callback
 
 import scala.annotation.tailrec
+import scala.io.Source
+import scala.language.reflectiveCalls
 
 trait Tools {
 
@@ -60,4 +64,18 @@ trait Tools {
       .sortWith(_._2 > _._2)
   }
 
+
+  def using[A, CL <: {def close(): Unit}] (closeable: CL) (f: CL => A): A =
+    try {
+      f(closeable)
+    } finally {
+      closeable.close()
+    }
+
+  def linesFromUrl(url: URL): List[String] =
+    using {
+      Source.fromURL(url)
+    } {
+      _.getLines.toList
+    }
 }

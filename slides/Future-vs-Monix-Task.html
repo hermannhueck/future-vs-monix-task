@@ -211,11 +211,10 @@ the presentation also gives an introduction to Monix Task.
 
 # Agenda
 
-1. [What is Monix?](#WhatIsMonix)
 1. [Referential Transparency](#ReferentialTransparency)
 1. [The IO Monad](#IOMonad)
 1. [Is Future referentially transparent?](#FutureReferentiallyTransparent)
-1. [Comparison of Features](#ComparisonOfFeatures)
+1. [What is Monix Task?](#WhatIsMonixTask)
 1. [Task Execution](#TaskExecution)
 1. [Task Cancelation](#TaskCancelation)
 1. [Task Builders](#TaskBuilders)
@@ -234,55 +233,9 @@ the presentation also gives an introduction to Monix Task.
 ---
 
 class: middle, center
-name: WhatIsMonix
-
-# 1. What is Monix?
-<br/>
-<br/>
-<br/>
-<br/>
-<br/>
-&nbsp;
-
----
-
-## Monix 3.x
-
-- library for asynchronous computations in Scala
-
-- dependent on: Cats, Cats Effect
-
-### Monix provides in different sub-projects/packages:
-
-- *monix.execution.Scheduler*: which extends *scala.concurrrent.ExecutionContext*
-
-- *monix.eval.Task*: an abstaction for possibly asynchronously evaluated effects
-
-- *monix.eval.Coeval*: an abstaction for synchronous effects
-
-- *monix.reactive.{Observable, Observer, Subscriber, Consumer}*: a push-based streaming library (compatible with the *reactivestreams.org* spec)
-
-- *monix.tail.Iterant*: a pull-based streaming library (compatible with the *reactivestreams.org* spec)
-
----
-
-## Monix Task
-<br/>
-
-- inspired by: Haskell's IO Monad, Scalaz Task
-
-- implementation of the IO Monad for Scala
-
-- lazy and referentially transparent alternative for *scala.concurrrent.Future*
-
-- very good interop with *scala.concurrrent.Future*
-
----
-
-class: middle, center
 name: ReferentialTransparency
 
-# 2. Referential Transparency
+# 1. Referential Transparency
 <br/>
 <br/>
 <br/>
@@ -307,12 +260,10 @@ https://en.wikipedia.org/wiki/Referential_transparency
 
 ---
 
-class: large-font
-
-## RT Benefits
+## Referential Transparency Benefits
 <br/>
 
-- (Mathematical) Reasoning about code
+- (Equational) Reasoning about code
 - Refactoring is easier
 - Testing is easier
 - Separate pure code from impure code
@@ -320,6 +271,8 @@ class: large-font
   (e.g. memoization, parallelization, compute expressions at compile time)
 
 .footnote[
+"What Referential Transparency can do for you"<br/>
+Talk by Luka Jacobowitz at ScalaIO 2017<br/>
 https://www.youtube.com/watch?v=X-cEGEJMx_4
 ]
 
@@ -328,7 +281,7 @@ https://www.youtube.com/watch?v=X-cEGEJMx_4
 class: middle, center
 name: IOMonad
 
-# 3. The IO Monad
+# 2. The IO Monad
 <br/>
 <br/>
 <br/>
@@ -379,7 +332,7 @@ program()    // producing the side effects "at the end of the world"
 
 - Free of side effects in it's definition
 
-- Produces side effect only when run
+- Produces side effects only when run
 
 ---
 
@@ -411,7 +364,7 @@ program.run()    // producing the side effects "at the end of the world"
 ```scala
 case class IO[A](run: () => A) {
   def map[B](f: A => B): IO[B] = IO { () => f(run()) }
-  def flatMap[B](f: A => IO[B]): IO[B] = f(run())
+  def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
 }
 ```
 
@@ -426,7 +379,9 @@ program.run()    // producing the side effects "at the end of the world"
 ```
 <br>
 
-- With _map_ and _flatMap_ _IO[A]_ is monadic and ready for for-comprehensions.
+- With *map* and *flatMap* *IO[A]* is monadic
+
+- Ready for for-comprehensions.
 
 ---
 
@@ -435,7 +390,7 @@ program.run()    // producing the side effects "at the end of the world"
 ```scala
 case class IO[A](run: () => A) {
   def map[B](f: A => B): IO[B] = IO { () => f(run()) }
-  def flatMap[B](f: A => IO[B]): IO[B] = f(run())
+  def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
 }
 
 object IO {
@@ -457,39 +412,97 @@ val program: IO[Unit] = for {
 
 program.run()    // producing the side effects "at the end of the world"
 ```
-<br>
 
 - *pure* and *eval* simplify the for-comprehension.
 
 ---
 
-## Defining other run* methods in case class IO
+## Defining other sync run* methods
 
 ```scala
 case class IO[A](run: () => A) {
 
   def map[B](f: A => B): IO[B] = IO { () => f(run()) }
-  def flatMap[B](f: A => IO[B]): IO[B] = f(run())
+  def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
 
-  // ----- different impure run* methods to be run at the end of the world
+  // ----- impure sync run* methods
 
   def runToTry: Try[A] = Try { run() }
 
   def runToEither: Either[Throwable, A] = runToTry.toEither
-
-  def runToFuture(implicit ec: ExecutionContext): Future[A] = Future { run() }
 }
 ```
 
 ```scala
-program.run()                                  // run sync, may throw an exception
+// running the program synchronously ...
 
-program.runToTry                               // run sync
+val v1: Unit = program.run()                    // may throw an exception
 
-program.runToEither                            // run sync
+val v2: Try[Unit] = program.runToTry
+
+val v3: Either[Throwable, Unit] = program.runToEither
+```
+
+---
+
+## Defining async run* methods
+
+```scala
+case class IO[A](run: () => A) {
+  // ...
+  // ----- impure async run* methods
+
+  // returns a Future that runs the task eagerly on another thread
+  def runToFuture(implicit ec: ExecutionContext): Future[A] =
+    Future { run() }
+
+  // runs the IO in a Runnable on the given ExecutionContext
+  // and then executes the specified Try based callback
+  def runOnComplete(callback: Try[A] => Unit)
+                                  (implicit ec: ExecutionContext): Unit = {
+    ec.execute(new Runnable {
+      override def run(): Unit = callback(runToTry)
+    })
+  }
+
+  // runs the IO in a Runnable on the given ExecutionContext
+  // and then executes the specified Either based callback
+  def runAsync(callback: Either[Throwable, A] => Unit)
+                                  (implicit ec: ExecutionContext): Unit = {
+    ec.execute(new Runnable {
+      override def run(): Unit = callback(runToEither)
+    })
+  }
+}
+```
+
+---
+
+## Using the async run* methods
+<br/>
+
+```scala
+// check username and password for correctness
+def authenticate(username: String, password: String): IO[Boolean] = ???
+
+// check Maggie's username and password for correctness
+val checkMaggie: IO[Boolean] = authenticate("maggie", "maggie-pw")
+```
+
+```scala
+// running 'checkMaggie' asynchronously ...
 
 implicit val ec: ExecutionContext = ExecutionContext.global
-program.runToFuture                            // run async
+
+val future: Future[Boolean] = checkMaggie.runToFuture
+future onComplete tryCallback
+//=> true
+
+checkMaggie runOnComplete tryCallback
+//=> true
+
+checkMaggie runAsync eitherCallback
+//=> true
 ```
 
 ---
@@ -504,14 +517,14 @@ class: middle, center, large-font
 
 But it can also be seen as ...
 
-## a <u>delayed Future</u>.
+## a <u>lazy Future</u>.
 
 ---
 
 class: middle, center
 name: FutureReferentiallyTransparent
 
-# 4. Is Future referentially transparent?
+# 3. Is *Future* referentially transparent?
 <br/>
 <br/>
 <br/>
@@ -521,8 +534,7 @@ name: FutureReferentiallyTransparent
 
 ---
 
-## Future is not referentially transparent!
-<br/>
+## Is *Future* referentially transparent?
 
 ```scala
 val future1: Future[(Int, Int)] = {
@@ -550,10 +562,13 @@ val future2: Future[(Int, Int)] = {
 future2 onComplete println     // Success((1,2))    <-- not the same result
 ```
 
+--
+
+## No!
+
 ---
 
-## Monix Task is referentially transparent!
-<br/>
+## Is Monix *Task* referentially transparent?
 
 ```scala
 val task1: Task[(Int, Int)] = {
@@ -581,18 +596,56 @@ val task2: Task[(Int, Int)] = {
 task2 runAsync println     // Success((1,2))    <-- same result
 ```
 
+
+--
+
+## Yes!
+
 ---
 
 class: middle, center
-name: ComparisonOfFeatures
+name: WhatIsMonixTask
 
-# 5. Comparison of Features
+# 4. What is Monix Task?
 <br/>
 <br/>
 <br/>
 <br/>
 <br/>
 &nbsp;
+
+---
+
+## Monix 3.x
+
+- library for asynchronous, reactive computations in Scala
+
+- dependent on: Cats, Cats Effect
+
+### Monix provides in different sub-projects/packages:
+
+- *monix.execution.<u>**Scheduler**</u>*: which extends *scala.concurrrent.ExecutionContext*
+
+- *monix.eval.<u>**Task**</u>*: an abstaction for possibly asynchronously evaluated effects
+
+- *monix.eval.<u>**Coeval**</u>*: an abstaction for synchronous effects
+
+- *monix.reactive.{<u>**Observable**</u>, Observer, Subscriber, Consumer}*: a push-based streaming library (compatible with the *reactivestreams.org* spec)
+
+- *monix.tail.<u>**Iterant**</u>*: a pull-based streaming library (compatible with the *reactivestreams.org* spec)
+
+---
+
+## Monix Task
+<br/>
+
+- inspired by: Haskell's IO Monad, Scalaz Task
+
+- implementation of the IO Monad for Scala
+
+- lazy and referentially transparent alternative for *scala.concurrrent.Future*
+
+- good interop with *Future*: easy to turn *Future* to *Task* or *Task* to *Future*
 
 ---
 
@@ -618,7 +671,7 @@ name: ComparisonOfFeatures
 class: middle, center
 name: TaskExecution
 
-# 6. Task Execution
+# 5. Task Execution
 <br/>
 <br/>
 <br/>
@@ -804,7 +857,7 @@ println(s"result = $result")
 
 - *Task#foreach* runs the *Task*.
 
-- It processes the result, but swallows possible errors.
+- It processes the result, but ignores possible errors.
 
 --
 
@@ -856,7 +909,7 @@ failed foreach println
 class: middle, center
 name: TaskCancelation
 
-# 7. Task Cancelation
+# 8. Task Cancelation
 <br/>
 <br/>
 <br/>
@@ -948,7 +1001,7 @@ future.cancel()
 class: middle, center
 name: Memoization
 
-# 8. Memoization
+# 7. Memoization
 <br/>
 <br/>
 <br/>
@@ -964,7 +1017,7 @@ name: Memoization
 
 ```scala
 // non-strict + memoized evaluation - equivalent to a lazy val
-val task = Task.eval { println("side effect"); "some value" }
+val task = Task.eval { println("side effect"); "some value" } // same as apply
 val memoized = task.memoize
 ```
 
@@ -1081,7 +1134,7 @@ cached runAsync printCallback   //=> 3
 class: middle, center
 name: TaskBuilders
 
-# 9. Task Builders
+# 8. Task Builders
 <br/>
 <br/>
 <br/>
@@ -1411,7 +1464,7 @@ def computeAsync(implicit ec: ExecutionContext): Future[Int] = Future { compute 
 --
 
 ```scala
-// converts a *Future* to a effectively memoized *Task*. Strict evaluation !!!
+// converts a Future to a effectively memoized Task. Strict evaluation !!!
 import monix.execution.Scheduler.Implicits.global
 val task = Task.fromFuture(computeAsync) // needs an EC
 ```
@@ -1419,7 +1472,7 @@ val task = Task.fromFuture(computeAsync) // needs an EC
 --
 
 ```scala
-// converts a *Future* to a lazy *Task*. Non-strict evaluation !!!
+// converts a Future to a lazy Task. Non-strict evaluation !!!
 import monix.execution.Scheduler.Implicits.global
 val task = Task.defer(Task.fromFuture(computeAsync)) // needs an EC
 ```
@@ -1427,7 +1480,7 @@ val task = Task.defer(Task.fromFuture(computeAsync)) // needs an EC
 --
 
 ```scala
-// converts a *Future* to a lazy *Task*. Non-strict evaluation !!!
+// converts a Future to a lazy Task. Non-strict evaluation !!!
 import monix.execution.Scheduler.Implicits.global
 val task = Task.deferFuture(computeAsync) // needs an EC
 ```
@@ -1435,7 +1488,7 @@ val task = Task.deferFuture(computeAsync) // needs an EC
 --
 
 ```scala
-// converts a *Future* to a lazy *Task*. Non-strict evaluation !!!
+// converts a Future to a lazy Task. Non-strict evaluation !!!
 val task = Task.deferFutureAction(implicit scheduler => computeAsync)
 // Scheduler is required when the task is run.
 ```
@@ -1448,7 +1501,7 @@ val task = Task.deferFutureAction(implicit scheduler => computeAsync)
 
 ## *Task.fromFuture*
 
-- converts a *Future* to a effectively memoized *Task*. **Strict** evaluation !!!
+- converts a *Future* to an effectively memoized *Task*. **Strict** evaluation !!!
 
 - The *Future* starts running eagerly, before *Task.fromFuture* is invoked.
 
@@ -1572,7 +1625,7 @@ object library {
 class: middle, center
 name: TaskAsMonad
 
-# 10. Task as Monad
+# 9. Task as Monad
 <br/>
 <br/>
 <br/>
@@ -1582,10 +1635,160 @@ name: TaskAsMonad
 
 ---
 
+## *Task#map*
+<br/>
+
+```scala
+val task: Task[List[(String, Int)]] =
+  Task.eval {     // Attention! This Task doesn't close the resource "README.md"
+    Source.fromURL("file:./README.md")
+  } map {
+    _.getLines
+  } map {
+    _.toList
+  } map {
+    wordCount(limit = 2)
+  }
+```
+
+```scala
+import Scheduler.Implicits.global
+
+task runAsync new Callback[Throwable, List[(String, Int)]] {
+  def onError(ex: Throwable): Unit =
+    println(s"ERROR: ${ex.toString}")
+  def onSuccess(wcList: List[(String, Int)]): Unit =
+    wcList foreach { case (word, count) => println(s"$word: $count")}
+}
+```
+
+---
+
+## *Task#flatMap*
+<br/>
+
+```scala
+def sumTask(from: Int, to: Int) = Task { sumOfRange(from, to) }
+def fibonacciTask(num: Int) = Task { fibonacci(num) }
+def factorialTask(num: Int) = Task { factorial(num) }
+
+def computeTask(from: Int, to: Int): Task[BigInt] =
+  sumTask(from, to)
+    .flatMap(fibonacciTask)
+    .map(_.intValue)
+    .flatMap(factorialTask)
+```
+
+```scala
+val task = computeTask(1, 4)
+
+import Scheduler.Implicits.global
+
+task runAsync printCallback
+//=> 6227020800
+```
+
+---
+
+## For-comprehension over a *Task* context
+<br/>
+
+```scala
+def sumTask(from: Int, to: Int) = Task { sumOfRange(from, to) }
+def fibonacciTask(num: Int) = Task { fibonacci(num) }
+def factorialTask(num: Int) = Task { factorial(num) }
+
+def computeTask(from: Int, to: Int): Task[BigInt] =
+  for {
+    x <- sumTask(from, to)
+    y <- fibonacciTask(x)
+    z <- factorialTask(y.intValue)
+  } yield z
+```
+
+```scala
+val task = computeTask(1, 4)
+
+import Scheduler.Implicits.global
+
+task runAsync printCallback
+//=> 6227020800
+```
+
+---
+
+## *Task* has a *Monad* instance
+
+```scala
+def sumF[F[_]: Monad](from: Int, to: Int): F[Int] =
+  Monad[F].pure { sumOfRange(from, to) }
+
+def fibonacciF[F[_]: Monad](num: Int): F[BigInt] =
+  Monad[F].pure { fibonacci(num) }
+
+def factorialF[F[_]: Monad](num: Int): F[BigInt] =
+  Monad[F].pure { factorial(num) }
+
+def computeF[F[_]: Monad](from: Int, to: Int): F[BigInt] =
+  for {
+    x <- sumF(from, to)
+    y <- fibonacciF(x)
+    z <- factorialF(y.intValue)
+  } yield z
+```
+
+```scala
+// reify F[] with Task
+val task: Task[BigInt] = computeF[Task](1, 4)
+
+import Scheduler.Implicits.global
+
+task runAsync printCallback
+//=> 6227020800
+```
+
+---
+
+## *computeF* can be used with any *Monad* instance
+
+```scala
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+import cats.instances.future._
+
+// reify F[] with Future
+val task: Future[BigInt] = computeF[Future](1, 4)
+
+task foreach { result => println(s"result = $result")}
+//=> 6227020800
+```
+
+```scala
+import cats.Id
+
+// reify F[] with Id
+val result: Id[BigInt] = computeF[Id](1, 4)     // Id[BigInt] ^= BigInt
+
+println(s"result = $result")
+//=> 6227020800
+```
+
+```scala
+import cats.instances.option._
+
+// reify F[] with Option
+val maybeResult: Option[BigInt] = computeF[Option](1, 4)
+
+maybeResult foreach { result => println(s"result = ${result}") }
+//=> 6227020800
+```
+
+---
+
 class: middle, center
 name: TailRecursiveLoops
 
-# 11. Tail Recursive Loops
+# 10. Tail Recursive Loops
 <br/>
 <br/>
 <br/>
@@ -1598,7 +1801,7 @@ name: TailRecursiveLoops
 class: middle, center
 name: AsyncBoundaries
 
-# 12. Async Boundaries
+# 11. Async Boundaries
 <br/>
 <br/>
 <br/>
@@ -1611,7 +1814,7 @@ name: AsyncBoundaries
 class: middle, center
 name: ErrorHandling
 
-# 13. Error Handling
+# 12. Error Handling
 <br/>
 <br/>
 <br/>
@@ -1624,7 +1827,7 @@ name: ErrorHandling
 class: middle, center
 name: Schedulers
 
-# 14. Schedulers
+# 13. Schedulers
 <br/>
 <br/>
 <br/>
@@ -1637,7 +1840,7 @@ name: Schedulers
 class: middle, center
 name: Races
 
-# 15. Races
+# 14. Races
 <br/>
 <br/>
 <br/>
@@ -1650,7 +1853,7 @@ name: Races
 class: middle, center
 name: Parallelizm
 
-# 16. Parallelizm
+# 15. Parallelizm
 <br/>
 <br/>
 <br/>
@@ -1663,7 +1866,7 @@ name: Parallelizm
 class: middle, center
 name: CompletableFuture
 
-# 17. CompletableFuture
+# 16. CompletableFuture
 <br/>
 <br/>
 <br/>
@@ -1676,7 +1879,7 @@ name: CompletableFuture
 class: middle, center
 name: Resources
 
-# 18. Resources
+# 20. Resources
 <br/>
 <br/>
 <br/>
@@ -1686,7 +1889,7 @@ name: Resources
 
 ---
 
-## Resources
+## Resources (1/2)
 
 <br/>
 
@@ -1698,6 +1901,24 @@ name: Resources
 
 - Monix 3.x API Documentation<br/>
   https://monix.io/api/3.0/
+
+
+---
+
+## Resources (1/2)
+
+<br/>
+
+- Monix Task: Lazy, Async and Awesome
+  Talk by Alexandru Nedelcu at Scala Days 2017
+  https://www.youtube.com/watch?v=wi97X8_JQUk
+
+- What Referential Transparency can do for you
+  Talk by Luka Jacobowitz at ScalaIO 2017
+  https://www.youtube.com/watch?v=X-cEGEJMx_4
+
+- Presentations on Monix:
+  https://monix.io/presentations
 
 ---
 
