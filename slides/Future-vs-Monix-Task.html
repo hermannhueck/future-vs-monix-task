@@ -1798,6 +1798,113 @@ name: TailRecursiveLoops
 
 ---
 
+## Tail recursion with annotation *@tailrec*
+
+- With the *@tailrec* annaotation the compiler guarantees us stack-safety.
+
+```scala
+@scala.annotation.tailrec
+def fibonacci(cycles: Int, x: BigInt = 0, y: BigInt = 1): BigInt =
+  if (cycles > 0)
+    fibonacci(cycles-1, y, x + y)
+  else
+    y
+```
+
+```scala
+val result: BigInt = fibonacci(6)
+
+println(result)
+//=> 13
+```
+
+---
+
+## Tail recursion with *Task*
+
+- With *Task* the fibonacci impl is lazy (due to *Task.defer*).
+
+- The annotation *@tailrec* is no longer required.
+
+- The impl is nevertheless stack-safe.
+
+```scala
+def fibonacciTask(cycles: Int, x: BigInt = 0, y: BigInt = 1): Task[BigInt] =
+  if (cycles > 0)
+    Task.defer(fibonacciTask(cycles-1, y, x+y))
+  else
+    Task.now(y)
+```
+
+```scala
+val task: Task[BigInt] = fibonacciTask(6)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task foreach println    // fibonacci computation starts here
+//=> 13
+```
+
+---
+
+## Tail recursion with *Task#flatMap*
+
+- With *Task* the fibonacci impl is lazy (due to *Task#flatMap*).
+
+- The annotation *@tailrec* is no longer required.
+
+- The impl is nevertheless stack-safe.
+
+```scala
+def fibonacciTask(cycles: Int, x: BigInt = 0, y: BigInt = 1): Task[BigInt] =
+  Task.eval(cycles > 0).flatMap {
+    case true =>
+      fib(cycles-1, y, x+y)
+    case false =>
+      Task.now(y)
+  }
+```
+
+```scala
+val task: Task[BigInt] = fibonacciTask(6)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task foreach println    // fibonacci computation starts here
+//=> 13
+```
+
+---
+
+## Mutual tail recursion
+
+- With *Task* even mutual tail recursive calls are possible.
+
+```scala
+def odd(n: Int): Task[Boolean] =
+  Task.eval(n == 0).flatMap {
+    case true => Task.now(false)
+    case false => if (n > 0) even(n - 1) else even(n + 1)
+  }
+
+def even(n: Int): Task[Boolean] =
+  Task.eval(n == 0).flatMap {
+    case true => Task.now(true)
+    case false => if (n > 0) odd(n - 1) else odd(n + 1)
+  }
+```
+
+```scala
+val task: Task[Boolean] = even(-1000000)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task foreach println
+//=> true
+```
+
+---
+
 class: middle, center
 name: AsyncBoundaries
 
