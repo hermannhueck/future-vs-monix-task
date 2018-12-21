@@ -225,6 +225,7 @@ the presentation also gives an introduction to Monix Task.
 1. [Async Boundaries](#AsyncBoundaries)
 1. [Schedulers](#Schedulers)
 1. [Error Handling](#ErrorHandling)
+1. [TaskApp](#TaskApp)
 1. [Races](#Races)
 1. [Parallelizm](#Parallelizm)
 1. [CompletableFuture](#CompletableFuture)
@@ -2161,10 +2162,7 @@ name: Schedulers
 ---
 
 ## Scheduler
-
-- A *Scheduler* executes *Runnable*s.
-
-- Running a Task requires an implicit *Scheduler*.
+<br/>
 
 - *Scheduler* is a subclass of *ExecutionContext*, hence it also serves as enhanced *ExecutionContext* for *Future*.
 
@@ -2174,11 +2172,71 @@ name: Schedulers
 
 - *Task* (due to it's laziness) requires a *Scheduler* only when run.
 
-- A *Scheduler* can execute a *Runnable* with a delay.
+---
 
-- A *Scheduler* can execute a *Runnable* periodically.
+## Run a *Runnable* on a *Scheduler*
+<br/>
 
-- A *Scheduler* can provide a cancel token to cancel a running execution.
+- A *Scheduler* can execute *Runnable*s directly.
+
+```scala
+Scheduler.global.execute(new Runnable {
+  def run(): Unit = println("Hello, world!")
+})
+```
+
+- We normally do not work with *Runnable*s, we use other abstractions like *Future* or *Task*.
+
+- Running a *Task* requires an implicit *Scheduler* in scope.
+
+Compared to *ExecutionContext* a *Scheduler* ...
+
+- can execute a *Runnable* with a delay (EC cannot).
+
+- can execute a *Runnable* periodically (EC cannot).
+
+- can provide a cancel token to cancel a running execution (EC cannot).
+
+---
+
+## Execute *Runnable*s - Overview
+<br/>
+
+- *Scheduler* provides different ways to run *Runnable*s.
+
+--
+
+```scala
+// executes a Runnable
+scheduler.execute(runnable)
+```
+
+--
+
+```scala
+// schedules a thunk for execution with a delay
+val cancelable: Cancelable = scheduler.scheduleOnce(initialDelay) { thunk }
+```
+
+--
+
+```scala
+// schedules a thunk with an initial delay and a periodic delay
+// between the end of a task and the start of the next task.
+// The effective delay is   periodic delay + duration of the task
+val cancelable: Cancelable = scheduler.scheduleWithFixedDelay(
+                                      initialDelay, periodicDelay) { thunk }
+```
+
+--
+
+```scala
+// schedules a thunk with an initial delay and a delay between periodic restarts
+// The effective delay is only the periodic delay.
+// (The duration of the task is not taken into account.)
+val cancelable: Cancelable = scheduler.scheduleAtFixedRate(
+                                      initialDelay, periodicDelay) { thunk }
+```
 
 ---
 
@@ -2202,7 +2260,32 @@ name: Schedulers
 
 ---
 
-## Make your own *Scheduler*
+## *UncaughtExceptionReporter*
+
+- A *Scheduler* has an *UncaughtExceptionReporter*.
+
+- *UncaughtExceptionReporter* is a trait with a method *reportFailure*:
+
+```scala
+package monix.execution
+
+trait UncaughtExceptionReporter extends Serializable {
+  def reportFailure(ex: Throwable): Unit
+}
+```
+
+- The default reporter logs exceptions to STDERR (on the JVM, not on ScalaJS).
+
+- Create your own customized *UncaughtExceptionReporter* if needed:
+
+```scala
+val myReporter = UncaughtExceptionReporter(ex => log.error(ex))
+```
+
+---
+
+## Build your own *Scheduler*
+<br/>
 
 - The global *Scheduler* is backed by the global *ExecutionContext* which is backed by Java's *ForkJoinPool*.
 
@@ -2210,6 +2293,132 @@ name: Schedulers
 
 - You can create your own *Scheduler* for the needs of your application.
 
+- Monix provides many builders to build your own.
+
+
+---
+
+## The most generic *Scheduler* Builder
+
+```scala
+lazy val scheduledExecutor: ScheduledExecutorService = ???
+lazy val executionContext: ExecutionContext = ???
+lazy val exceptionReporter: UncaughtExceptionReporter = ???
+lazy val executionModel: ExecutionModel = ???
+
+lazy val scheduler = Scheduler(
+  scheduledExecutor,          // schedules delays
+  executionContext,           // executes Runnables or Tasks
+  exceptionReporter,          // logs uncaught exceptions to some log destination
+  executionModel              // specifies the ExecutionModel to use
+)
+```
+
+--
+
+- There are many overloads of this builder with good defaults for one, two or three parameters, e.g. ...
+
+```scala
+lazy val scheduler2 = Scheduler(scheduledExecutor, executionContext)
+
+lazy val scheduler3 = Scheduler(executionContext)
+
+lazy val scheduler4 = Scheduler(scheduledExecutor)
+
+lazy val scheduler5 = Scheduler(executionContext, executionModel)
+
+lazy val scheduler6 = Scheduler(executionModel)
+```
+
+---
+
+## Spezialized *Scheduler*s
+
+--
+
+- for computation (for CPU bound tasks, backed by a *ForkJoinPool*):
+
+```scala
+lazy val scheduler7 = Scheduler.computation(parallelism = 10)
+lazy val scheduler8 =
+    Scheduler.computation(parallelism = 10, executionModel = AlwaysAsyncExecution)
+```
+
+--
+
+- for I/O (unbounded thread-pool, backed by a *CachedThreadPool*):
+
+```scala
+lazy val scheduler9 = Scheduler.io()
+lazy val scheduler10 = Scheduler.io(name="my-io")
+lazy val scheduler11 =
+    Scheduler.io(name="my-io", executionModel = AlwaysAsyncExecution)
+```
+
+--
+
+- for single thread pool (backed by a *SingleThreadScheduledExecutor*):
+
+```scala
+lazy val scheduler12 = Scheduler.singleThread(name = "my-single-thread-pool")
+```
+
+--
+
+- for fixed size thread pool (backed by a *ScheduledThreadPool*):
+
+```scala
+lazy val scheduler13 =
+    Scheduler.fixedPool(name = "my-fixed-size-pool", poolSize = 10)
+```
+
+---
+
+## Shutdown with SchedulerService
+
+<br/>
+
+- Most *Scheduler* builders return a *SchedulerService*.
+
+- *SchedulerService* can be used to initiate and control the shutdown process.
+  <ul>
+    <li><u>shutdown</u>: Initiates an orderly shutdown in which previously submitted tasks are executed, but no new tasks will be accepted.</li>
+    <li><u>awaitTermination</u>: Returns a Future that will be complete when all tasks have completed execution after a shutdown request, or the timeout occurs.</li>
+    <li><u>isShutdown</u>: Returns true if this scheduler has been shut down.</li>
+    <li><u>isTerminated</u>: Returns true if all tasks have completed after shut down.</li>
+  </ul>
+
+---
+
+## Shutdown with SchedulerService - Code
+
+```scala
+val io: SchedulerService = Scheduler.io("my-io")
+
+io.execute(() => {
+  Thread sleep 5000L
+  println(s"Running on $currentThread")
+  println("Hello, world!")
+})
+
+io.shutdown()
+
+println(s"isShutdown = ${io.isShutdown}")
+
+val termination: Future[Boolean] = io.awaitTermination(10.seconds, global)
+Await.ready(termination, Duration.Inf)
+
+println(s"isTerminated = ${io.isTerminated}")
+```
+
+### Output
+
+```code
+isShutdown = true
+Running on Thread: my-io-114
+Hello, world!
+isTerminated = true
+```
 
 ---
 
@@ -2227,9 +2436,22 @@ name: ErrorHandling
 ---
 
 class: middle, center
+name: TaskApp
+
+# 14. TaskApp
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+class: middle, center
 name: Races
 
-# 14. Races
+# 15. Races
 <br/>
 <br/>
 <br/>
@@ -2242,7 +2464,7 @@ name: Races
 class: middle, center
 name: Parallelizm
 
-# 15. Parallelizm
+# 16. Parallelizm
 <br/>
 <br/>
 <br/>
@@ -2255,7 +2477,7 @@ name: Parallelizm
 class: middle, center
 name: CompletableFuture
 
-# 16. CompletableFuture
+# 17. CompletableFuture
 <br/>
 <br/>
 <br/>
