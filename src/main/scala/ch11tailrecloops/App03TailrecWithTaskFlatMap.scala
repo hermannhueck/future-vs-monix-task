@@ -5,7 +5,7 @@ import monix.execution.Scheduler
 
 object App03TailrecWithTaskFlatMap extends App {
 
-  println("\n-----")
+  println(s"\n----- Main $currentThread")
 
   def fib(cycles: Int, x: BigInt = 0, y: BigInt = 1): Task[BigInt] =
     Task.eval(cycles > 0).flatMap {

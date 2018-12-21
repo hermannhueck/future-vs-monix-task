@@ -5,7 +5,7 @@ import monix.execution.Scheduler
 
 object App04MutualTailRecursion extends App {
 
-  println("\n-----")
+  println(s"\n----- Main $currentThread")
 
   def odd(n: Int): Task[Boolean] =
     Task.eval(n == 0).flatMap {

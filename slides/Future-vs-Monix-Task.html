@@ -223,8 +223,8 @@ the presentation also gives an introduction to Monix Task.
 1. [Task as Monad](#TaskAsMonad)
 1. [Tail Recursive Loops](#TailRecursiveLoops)
 1. [Async Boundaries](#AsyncBoundaries)
-1. [Error Handling](#ErrorHandling)
 1. [Schedulers](#Schedulers)
+1. [Error Handling](#ErrorHandling)
 1. [Races](#Races)
 1. [Parallelizm](#Parallelizm)
 1. [CompletableFuture](#CompletableFuture)
@@ -620,7 +620,7 @@ name: WhatIsMonixTask
 
 - library for asynchronous, reactive computations in Scala
 
-- dependent on: Cats, Cats Effect
+- dependent on: [*cats*](https://typelevel.org/cats/) and [*cats-effect*](https://typelevel.org/cats-effect/)
 
 ### Monix provides in different sub-projects/packages:
 
@@ -644,6 +644,12 @@ name: WhatIsMonixTask
 - implementation of the IO Monad for Scala
 
 - lazy and referentially transparent alternative for *scala.concurrrent.Future*
+
+- *Future* is a value-wannabe. It starts executing when created.
+
+- *Task* is a function (a wrapped *Function0[A]*).
+  It is just a description of a (possibly asynchronous) computation.
+  It doen't run unless explicitly told to do so.
 
 - good interop with *Future*: easy to turn *Future* to *Task* or *Task* to *Future*
 
@@ -1918,10 +1924,233 @@ name: AsyncBoundaries
 
 ---
 
-class: middle, center
-name: ErrorHandling
+## Green Threads and JVM Threads
 
-# 12. Error Handling
+1. <u>JVM threads</u> map 1:1 to OS threads. They have their own stack and register set each.
+   They are managed by the OS using <u>preemptive multitasking</u> in kernel space.
+   JVM threads are a scarce resource. Switching context between them is expensive.
+
+2. <u>[Green threads](https://en.wikipedia.org/wiki/Green_threads)</u> (aka *Fibers*) are managed by the runtime (Haskell)
+   or a library (Monix, Cats Effect, Akka). This allows for
+   <u>[cooperative multitasking](https://en.wikipedia.org/wiki/Cooperative_multitasking)</u> in user space.
+   Green threads can yield execution back to the thread pool which then might choose another green thread
+   to run on the same JVM thread. A context switch between green threads is cheap.
+   
+Your application may use relatively few JVM threads but many green threads.
+
+Monix *Task* provides asynchrony with JVM threads and green threads.
+
+- Avoid blocking a JVM thread!
+
+- You may block a green thread without blocking the JVM thread.<br/>
+  ("asynchronous blocking" or "semantic blocking").
+
+---
+
+## Asynchronous Boundaries - Overview
+
+- An asynchronous boundary is a context switch between two logical threads.
+
+- A logical thread may be a green thread or a JVM thread.
+
+--
+
+```scala
+// Task#executeAsync ensures an async boundary, forks into another logical thread.
+val source = Task.eval { computation }
+val forked = source.executeAsync
+```
+
+--
+
+```scala
+// Task#executeOn executes the current Task on another Scheduler.
+// This implies a context switch between JVM threads.
+val source = Task.eval { computation }
+val forked = source.executeOn(someScheduler)
+```
+
+--
+
+```scala
+// Task#asyncBoundary introduces an async Boundary
+// (possibly switching back to the default Scheduler).
+val source = Task.eval { computation }
+val forked = source.executeOn(someScheduler)
+val back = forked.asyncBoundary
+```
+
+--
+
+[Skip details](#Schedulers)
+
+---
+
+## *Task#executeAsync*
+
+- ensures an asynchronous boundary
+
+- forces the fork into another thread on execution
+
+--
+
+```scala
+val task = Task.eval {
+  println(s"Running on $currentThread")
+  factorial(10)
+}.executeAsync
+
+import Scheduler.Implicits.global
+
+task.runToFuture foreach println
+//=> Running on Thread: scala-execution-context-global-241
+//=> 3628800
+```
+
+---
+
+## *Task#executeOn* (1/2)
+
+- executes the current Task on another Scheduler
+
+- (possibly) introduces an asynchronous boundary
+
+- (possibly) implies a context switch between JVM threads
+
+--
+
+```scala
+lazy val io = Scheduler.io(name="my-io")  // I/O scheduler
+
+val source = Task { println(s"Running on $currentThread") }
+
+val forked = source.executeOn(io)         // override default Scheduler by fork
+
+import Scheduler.Implicits.global
+
+source.runToFuture
+//=> Running on Thread: run-main-9
+forked.runToFuture
+//=> Running on Thread: my-io-265
+```
+
+---
+
+## *Task#executeOn* (2/2)
+
+```scala
+lazy val io = Scheduler.io(name="my-io")  // I/O scheduler
+
+val source = Task { println(s"Running on $currentThread") }
+
+val forked = source.executeOn(io)         // override default Scheduler by fork
+
+val onFinish = Task { println(s"Ending on $currentThread") }
+
+val task =
+  source
+    .flatMap(_ => forked)
+    .doOnFinish(_ => onFinish)
+
+
+import Scheduler.Implicits.global
+
+task.runToFuture
+//=> Running on thread: run-main-2a
+//=> Running on thread: my-io-803
+//=> Ending on thread: scala-execution-context-global-800
+```
+
+---
+
+## *Task#asyncBoundary*
+
+- switches execution back to the default scheduler
+
+- introduces an asynchronous boundary (if task is already running on the default scheduler)
+
+--
+
+```scala
+lazy val io = Scheduler.io(name="my-io")  // I/O scheduler
+
+val source = Task { println(s"Running on $currentThread") }
+
+val forked = source.executeOn(io)         // override default Scheduler by fork
+
+val onFinish = Task { println(s"Ending on $currentThread") }
+
+val task =
+  source // executes on global
+    .flatMap(_ => forked) // executes on io
+    .asyncBoundary // switch back to global
+    .doOnFinish(_ => onFinish) // executes on global
+
+import Scheduler.Implicits.global
+
+task.runToFuture
+//=> Running on Thread: run-main-e
+//=> Running on Thread: my-io-358
+//=> Ending on Thread: scala-execution-context-global-343
+```
+
+---
+
+## Asynchrony on a single JVM Thread
+
+- Green threads allow for asynchrony on a single JVM thread.
+
+- The example *Task* introduces several async boundaries which allow to shift the context of logical threads.
+
+- The Task is run twice on a thread pool with a single thread.
+
+--
+
+```scala
+def createTask(id: Int): Task[Int] =
+  Task { println(s"Task no $id starting on $currentThread"); id }
+    .asyncBoundary
+    .map { someComputation }
+    .asyncBoundary
+    .map { someComputation }
+    .asyncBoundary
+    .map { someComputation }
+    .asyncBoundary
+    .map { someComputation }
+
+implicit val scheduler: Scheduler = Scheduler.singleThread("SingleThreadScheduler")
+
+createTask(1) runAsync (_ => println(s"Task no 1 finished"))
+createTask(2) runAsync (_ => println(s"Task no 2 finished"))
+```
+
+---
+
+<br/>
+
+### Output
+
+```code
+Task no 1 starting on Thread: run-main-1b
+Computation no 1 running on Thread: SingleThreadScheduler-587
+Task no 2 starting on Thread: run-main-1b
+Computation no 2 running on Thread: SingleThreadScheduler-587
+Computation no 1 running on Thread: SingleThreadScheduler-587
+Computation no 2 running on Thread: SingleThreadScheduler-587
+Computation no 1 running on Thread: SingleThreadScheduler-587
+Computation no 2 running on Thread: SingleThreadScheduler-587
+Computation no 1 running on Thread: SingleThreadScheduler-587
+Task no 1 finished on Thread: SingleThreadScheduler-587
+Computation no 2 running on Thread: SingleThreadScheduler-587
+Task no 2 finished on Thread: SingleThreadScheduler-587
+```
+
+---
+
+class: middle, center
+name: Schedulers
+
+# 12. Schedulers
 <br/>
 <br/>
 <br/>
@@ -1931,10 +2160,63 @@ name: ErrorHandling
 
 ---
 
-class: middle, center
-name: Schedulers
+## Scheduler
 
-# 13. Schedulers
+- A *Scheduler* executes *Runnable*s.
+
+- Running a Task requires an implicit *Scheduler*.
+
+- *Scheduler* is a subclass of *ExecutionContext*, hence it also serves as enhanced *ExecutionContext* for *Future*.
+
+- It is also a replacement for Java’s *ScheduledExecutorService*.
+
+- *Future* requires an *ExecutionContext* for almost every method (*apply*, *map*, *flatMap*, *onComplete*, etc.) whereas ...
+
+- *Task* (due to it's laziness) requires a *Scheduler* only when run.
+
+- A *Scheduler* can execute a *Runnable* with a delay.
+
+- A *Scheduler* can execute a *Runnable* periodically.
+
+- A *Scheduler* can provide a cancel token to cancel a running execution.
+
+---
+
+## Execution Models
+
+<br/>
+
+- A Scheduler has an *ExecutionModel*.
+
+- The *ExecutionModel* affects **how** a *Task* is evaluated.
+
+- Monix 3.x provides three different *ExecutionModel*s:
+    <ul>
+      <li><u>SynchronousExecution</u>: preferres sync execution as long as possible</li>
+      <li><u>AlwaysAsyncExecution</u>: ensures async execution for each step of a task</li>
+      <li><u>BatchedExecution</u> (<u>default</u>): specifies a mixed execution mode under which tasks
+        are executed synchronously in batches up to a maximum size, after which an asynchronous boundary is forced.<br/>
+        (The batch size is configurable. Default: 1024)
+      </li>
+    </ul>
+
+---
+
+## Make your own *Scheduler*
+
+- The global *Scheduler* is backed by the global *ExecutionContext* which is backed by Java's *ForkJoinPool*.
+
+- The global *Scheduler* is a good default suitable for many scenarios. But ...
+
+- You can create your own *Scheduler* for the needs of your application.
+
+
+---
+
+class: middle, center
+name: ErrorHandling
+
+# 13. Error Handling
 <br/>
 <br/>
 <br/>
@@ -1996,7 +2278,7 @@ name: Resources
 
 ---
 
-## Resources (1/2)
+## Resources (1/3)
 
 <br/>
 
@@ -2009,23 +2291,40 @@ name: Resources
 - Monix 3.x API Documentation<br/>
   https://monix.io/api/3.0/
 
+- Monix Task: Lazy, Async and Awesome<br/>
+  Talk by Alexandru Nedelcu at Scala Days 2017<br/>
+  https://www.youtube.com/watch?v=wi97X8_JQUk
+
+- Presentations on Monix:<br/>
+  https://monix.io/presentations
 
 ---
 
-## Resources (1/2)
+## Resources (2/3)
 
 <br/>
 
-- Monix Task: Lazy, Async and Awesome
-  Talk by Alexandru Nedelcu at Scala Days 2017
-  https://www.youtube.com/watch?v=wi97X8_JQUk
+- "Concurrency Basics" in cats-effect<br/>
+  https://typelevel.org/cats-effect/concurrency/basics.html
 
-- What Referential Transparency can do for you
-  Talk by Luka Jacobowitz at ScalaIO 2017
+- Daniels Spiewak's gist on Thread Pools<br/>
+  https://gist.github.com/djspiewak/46b543800958cf61af6efa8e072bfd5c
+
+- Discussion about Green Threads and blocking I/O<br/>
+  https://github.com/typelevel/cats-effect/issues/243
+
+- Best Practice: "Should Not Block Threads"<br/>
+  https://monix.io/docs/3x/best-practices/blocking.html
+
+---
+
+## Resources (3/3)
+
+<br/>
+
+- What Referential Transparency can do for you<br/>
+  Talk by Luka Jacobowitz at ScalaIO 2017<br/>
   https://www.youtube.com/watch?v=X-cEGEJMx_4
-
-- Presentations on Monix:
-  https://monix.io/presentations
 
 ---
 
@@ -2075,7 +2374,10 @@ https://github.com/hermannhueck/future-vs-monix-task
           // Default: false
           // Alternatives: true
           click: false
-        }
+        },
+
+        // Enable or disable counting of incremental slides in the slide counting
+        countIncrementalSlides: false
       });
     </script>
   </body>

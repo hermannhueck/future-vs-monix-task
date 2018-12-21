@@ -2,7 +2,7 @@ package ch11tailrecloops
 
 object App01TailrecWithAnnotation extends App {
 
-  println("\n-----")
+  println(s"\n----- Main $currentThread")
 
   @scala.annotation.tailrec
   def fibonacci(cycles: Int, x: BigInt = 0, y: BigInt = 1): BigInt =

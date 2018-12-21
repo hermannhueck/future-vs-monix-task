@@ -5,7 +5,7 @@ import monix.execution.Scheduler
 
 object App02TailrecWithTask extends App {
 
-  println("\n-----")
+  println(s"\n----- Main $currentThread")
 
   def fibonacciTask(cycles: Int, x: BigInt = 0, y: BigInt = 1): Task[BigInt] =
     if (cycles > 0)
