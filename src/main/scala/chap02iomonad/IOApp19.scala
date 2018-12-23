@@ -8,21 +8,24 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 /*
-  Step 16 provides IO.fromFuture.
-  These methods (eagerly) converts a Future into an IO.
-  Using IO.defer it can be made a lazy IO.
+  Step 19 provides IO.deferFutureAction which allows to provide the EC when the IO is run.
+  - I expanded the ADT IO again with a new subtype FutureToTask which wraps a function of type: ExecutionContext => Future[A]
+  - IO.deferFutureAction just creates an instance of FutureToTask passing the function it received to it.
+  - The IO#run method in trait IO has a new case for FutureToTask which applies the wrapped function to the implicitly passed EC,
+    turns it into an IO with fromFuture and runs it passing the ec again.
  */
-object IOApp16 extends App {
+object IOApp19 extends App {
 
   trait IO[A] {
 
     import IO._
 
-    private def run(): A = this match {
+    private def run(implicit ec: ExecutionContext): A = this match {
       case Pure(thunk) => thunk()
       case Eval(thunk) => thunk()
-      case Suspend(thunk) => thunk().run()
-      case FlatMap(src, f) => f(src.run()).run()
+      case Suspend(thunk) => thunk().run
+      case FlatMap(src, f) => f(src.run).run
+      case FutureToTask(fEcToFuture) => fromFuture(fEcToFuture(ec)).run(ec)
     }
 
     def map[B](f: A => B): IO[B] = flatMap(a => pure(f(a)))
@@ -31,29 +34,35 @@ object IOApp16 extends App {
     // ----- impure sync run* methods
 
     // runs on the current Thread returning Try[A]
-    def runToTry: Try[A] = Try { run() }
+    def runToTry(implicit ec: ExecutionContext): Try[A] = Try { run }
 
     // runs on the current Thread returning Either[Throwable, A]
-    def runToEither: Either[Throwable, A] = runToTry.toEither
+    def runToEither(implicit ec: ExecutionContext): Either[Throwable, A] = runToTry.toEither
 
     // ----- impure async run* methods
 
     // returns a Future that runs the task eagerly on another thread
-    def runToFuture(implicit ec: ExecutionContext): Future[A] = Future { run() }
+    def runToFuture(implicit ec: ExecutionContext): Future[A] = Future { run }
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
-    // convert Try based callback into an Either based callback
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
+      // convert Try based callback into an Either based callback
       runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
+    }
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
       runAsync0(ec, callback)
+    }
 
-    private def runAsync0(ec: ExecutionContext, callback: Either[Throwable, A] => Unit): Unit =
-      ec.execute(() => callback(runToEither))
+    private val runAsync0: (ExecutionContext, Either[Throwable, A] => Unit) => Unit = {
+      (ec: ExecutionContext, callback: Either[Throwable, A] => Unit) =>
+        ec.execute(new Runnable {
+          override def run(): Unit = callback(runToEither(ec))
+        })
+    }
 
     // Triggers async evaluation of this IO, executing the given function for the generated result.
     // WARNING: Will not be called if this IO is never completed or if it is completed with a failure.
@@ -72,6 +81,7 @@ object IOApp16 extends App {
     private case class Eval[A](thunk: () => A) extends IO[A]
     private case class Suspend[A](thunk: () => IO[A]) extends IO[A]
     private case class FlatMap[A, B](src: IO[A], f: A => IO[B]) extends IO[B]
+    private case class FutureToTask[A](f: ExecutionContext => Future[A]) extends IO[A]
 
     def pure[A](a: A): IO[A] = Pure { () => a }
     def now[A](a: A): IO[A] = pure(a)
@@ -97,11 +107,23 @@ object IOApp16 extends App {
       }
     }
 
-    def fromFuture[A](future: Future[A]): IO[A] =
-      future.value match {
+    def fromFuture[A](fa: Future[A]): IO[A] =
+      fa.value match {
         case Some(try0) => fromTry(try0)
-        case None => IO.eval { Await.result(future, Duration.Inf) } // eval is lazy!
+        case None => IO.eval { Await.result(fa, Duration.Inf) } // eval is lazy!
       }
+
+    def deferFuture[A](fa: => Future[A]): IO[A] =
+      defer(IO.fromFuture(fa))
+
+    def deferFutureAction0[A](f: ExecutionContext => Future[A]): IO[A] = {
+      def runIt(f0: ExecutionContext => Future[A])(implicit ec: ExecutionContext): IO[A] = deferFuture(f0(ec))
+      implicit lazy val ec0: ExecutionContext = ExecutionContext.global
+      runIt(f)
+    }
+
+    def deferFutureAction[A](fEcToFuture: ExecutionContext => Future[A]): IO[A] =
+      FutureToTask(fEcToFuture)
 
     implicit def ioMonad: Monad[IO] = new Monad[IO] {
       override def pure[A](value: A): IO[A] = IO.pure(value)
@@ -123,22 +145,22 @@ object IOApp16 extends App {
     // EC needed to turn a Future into an IO
     implicit val ec: ExecutionContext = ExecutionContext.global
 
-    println("\n>>> IO.fromFuture(future)")
-    println("----- side effect performed eagerly")
+    println("\n>>> IO.deferFuture(future)")
+    println("----- side effect performed lazily")
+    val io = IO.deferFuture { futureGetUsers }
 
-    val io = IO.fromFuture { futureGetUsers }
     io foreach { users => users foreach println } // prints "side effect"
-    io foreach { users => users foreach println }
+    io foreach { users => users foreach println } // prints "side effect"
     Thread sleep 1000L
   }
 
   {
-    // EC needed to turn a Future into an IO
-    implicit val ec: ExecutionContext = ExecutionContext.global
-
-    println("\n>>> IO.defer(IO.fromFuture(future))")
+    println("\n>>> IO.deferFutureAction(implicit ec => future)")
     println("----- side effect performed lazily")
-    val io = IO.defer { IO.fromFuture { futureGetUsers } }
+    val io = IO.deferFutureAction { implicit ec: ExecutionContext => futureGetUsers }
+
+    // EC needed to run the IO
+    implicit val ec: ExecutionContext = ExecutionContext.global
 
     io foreach { users => users foreach println } // prints "side effect"
     io foreach { users => users foreach println } // prints "side effect"

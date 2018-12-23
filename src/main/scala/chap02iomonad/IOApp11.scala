@@ -6,11 +6,15 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 /*
-  In step 11 I expanded the ADT IO and added a new subtype 'Suspend' and expanded the 'run' method accordingly.
-  Pure and Eval take a thunk of type () => A whereas Suspend takes a thunk of type () => IO[A].
-  This just suspends/defers the given thunk making it lazy in case it was eager.
+  Step 11 makes the abtract 'run' method in trait IO concrete.
+  It is implemented as a pattern match over the subtypes of the ADT: Pure and Eval.
 
-  IO.suspend and the alias IO.defer just create a Suspend instance.
+  As 'run' is now a concrete method in trait IO the Function0[A] parameter
+  can no longer have the same name 'run' in order not ot override the base traits method 'run'.
+  I called it 'thunk'.
+
+  The method IO#run can now be made private.
+  The other IO#run* methods are provided for public use.
  */
 object IOApp11 extends App {
 
@@ -21,7 +25,6 @@ object IOApp11 extends App {
     private def run(): A = this match {
       case Pure(thunk) => thunk()
       case Eval(thunk) => thunk()
-      case Suspend(thunk) => thunk().run()
     }
 
     def map[B](f: A => B): IO[B] = IO { f(run()) }
@@ -42,19 +45,17 @@ object IOApp11 extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToTry)
-      })
-    }
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
+    // convert Try based callback into an Either based callback
+      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToEither)
-      })
-    }
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
+      runAsync0(ec, callback)
+
+    private def runAsync0(ec: ExecutionContext, callback: Either[Throwable, A] => Unit): Unit =
+      ec.execute(() => callback(runToEither))
 
     // Triggers async evaluation of this IO, executing the given function for the generated result.
     // WARNING: Will not be called if this IO is never completed or if it is completed with a failure.
@@ -71,16 +72,13 @@ object IOApp11 extends App {
 
     private case class Pure[A](thunk: () => A) extends IO[A]
     private case class Eval[A](thunk: () => A) extends IO[A]
-    private case class Suspend[A](thunk: () => IO[A]) extends IO[A]
 
     def pure[A](a: A): IO[A] = Pure { () => a }
+    def now[A](a: A): IO[A] = pure(a)
 
     def eval[A](a: => A): IO[A] = Eval { () => a }
     def delay[A](a: => A): IO[A] = eval(a)
     def apply[A](a: => A): IO[A] = eval(a)
-
-    def suspend[A](ioa: => IO[A]): IO[A] = Suspend(() => ioa)
-    def defer[A](ioa: => IO[A]): IO[A] = suspend(ioa)
   }
 
 
@@ -102,7 +100,6 @@ object IOApp11 extends App {
 
 
   println("\n-----")
-
 
   implicit val ec: ExecutionContext = ExecutionContext.global
 
@@ -139,18 +136,6 @@ object IOApp11 extends App {
   println("\n>>> IO#runAsync:")
   checkMaggie runAsync authCallbackEither
   Thread sleep 500L
-
-  println("\n>>> IO.pure:")
-  val io1 = IO.pure { println("immediate side effect"); 5 }
-  Thread sleep 2000L
-  io1 foreach println
-  Thread sleep 2000L
-
-  println("\n>>> IO.defer:")
-  val io2 = IO.defer { IO.pure { println("deferred side effect"); 5 } }
-  Thread sleep 2000L
-  io2 foreach println
-  Thread sleep 2000L
 
   println("-----\n")
 }

@@ -6,9 +6,9 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 /*
-  Step 8 adds the 'foreach' method to IO. It executes asynchronously and requires an implicit Executioncontext.
-
-  'foreach' only processes successful results, errors are reported to the ExecutionContext.
+  Step 8 refactors IO#runOnComplete and IO#runAsync:
+  - private helper method IO#runAsync0 takes an EC and an Either based callback
+    IO#runAsync and IO#runOnComplete are implemented in terms of IO#runAsync0.
  */
 object IOApp08 extends App {
 
@@ -32,29 +32,17 @@ object IOApp08 extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToTry)
-      })
-    }
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
+    // convert Try based callback into an Either based callback
+      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToEither)
-      })
-    }
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
+      runAsync0(ec, callback)
 
-    // Triggers async evaluation of this IO, executing the given function for the generated result.
-    // WARNING: Will not be called if this IO is never completed or if it is completed with a failure.
-    // Since this method executes asynchronously and does not produce a return value,
-    // any non-fatal exceptions thrown will be reported to the ExecutionContext.
-    def foreach(f: A => Unit)(implicit ec: ExecutionContext): Unit =
-      runAsync {
-        case Left(ex) => ec.reportFailure(ex)
-        case Right(value) => f(value)
-      }
+    private def runAsync0(ec: ExecutionContext, callback: Either[Throwable, A] => Unit): Unit =
+      ec.execute(() => callback(runToEither))
   }
 
   object IO {
@@ -82,20 +70,16 @@ object IOApp08 extends App {
 
   println("\n-----")
 
-  implicit val ec: ExecutionContext = ExecutionContext.global
-
-  IO.eval(getUsers) foreach { users => users foreach println }
-  Thread sleep 500L
+  IO.eval(getUsers).run() foreach println
   println("-----")
 
-  IO.eval(getPasswords) foreach { users => users foreach println }
-  Thread sleep 500L
+  IO.eval(getPasswords).run() foreach println
   println("-----")
 
   println("\n>>> IO#run: authenticate:")
-  authenticate("maggie", "maggie-pw") foreach println
-  authenticate("maggieXXX", "maggie-pw") foreach println
-  authenticate("maggie", "maggie-pwXXX") foreach println
+  println(authenticate("maggie", "maggie-pw").run())
+  println(authenticate("maggieXXX", "maggie-pw").run())
+  println(authenticate("maggie", "maggie-pwXXX").run())
 
 
   val checkMaggie: IO[Boolean] = authenticate("maggie", "maggie-pw")
@@ -105,6 +89,8 @@ object IOApp08 extends App {
 
   println("\n>>> IO#runToEither:")
   printAuthEither(checkMaggie.runToEither)
+
+  implicit val ec: ExecutionContext = ExecutionContext.global
 
   println("\n>>> IO#runToFuture:")
   val future: Future[Boolean] = checkMaggie.runToFuture

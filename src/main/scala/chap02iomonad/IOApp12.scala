@@ -1,15 +1,22 @@
 package chap02iomonad
 
-import chap02iomonad.auth._
+import cats.Monad
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
+import scala.language.higherKinds
+
 /*
-  In step 12 I added the subtype FlatMap to the ADT IO and expanded the 'run' method accordingly.
-  The Method IO#flatMap just creates an instance of FlatMap.
-  IO#map is implemented in terms of IO#flatMap and IO.pure.
-  Now IO is trampolined and hence stack-safe.
+  Step 12 makes the abtract 'run' method in trait IO concrete.
+  It is implemented as a pattern match over the subtypes of the ADT: Pure and Eval.
+
+  As 'run' is now a concrete method in trait IO the Function0[A] parameter
+  can no longer have the same name 'run' in order not ot override the base traits method 'run'.
+  I called it 'thunk'.
+
+  The method IO#run can now be made private.
+  The other IO#run* methods are provided for public use.
  */
 object IOApp12 extends App {
 
@@ -20,12 +27,10 @@ object IOApp12 extends App {
     private def run(): A = this match {
       case Pure(thunk) => thunk()
       case Eval(thunk) => thunk()
-      case Suspend(thunk) => thunk().run()
-      case FlatMap(src, f) => f(src.run()).run()
     }
 
-    def map[B](f: A => B): IO[B] = flatMap(a => pure(f(a)))
-    def flatMap[B](f: A => IO[B]): IO[B] = FlatMap(this, f)
+    def map[B](f: A => B): IO[B] = IO { f(run()) }
+    def flatMap[B](f: A => IO[B]): IO[B] = IO { f(run()).run() }
 
     // ----- impure sync run* methods
 
@@ -42,19 +47,17 @@ object IOApp12 extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToTry)
-      })
-    }
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
+    // convert Try based callback into an Either based callback
+      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToEither)
-      })
-    }
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
+      runAsync0(ec, callback)
+
+    private def runAsync0(ec: ExecutionContext, callback: Either[Throwable, A] => Unit): Unit =
+      ec.execute(() => callback(runToEither))
 
     // Triggers async evaluation of this IO, executing the given function for the generated result.
     // WARNING: Will not be called if this IO is never completed or if it is completed with a failure.
@@ -71,87 +74,86 @@ object IOApp12 extends App {
 
     private case class Pure[A](thunk: () => A) extends IO[A]
     private case class Eval[A](thunk: () => A) extends IO[A]
-    private case class Suspend[A](thunk: () => IO[A]) extends IO[A]
-    private case class FlatMap[A, B](src: IO[A], f: A => IO[B]) extends IO[B]
 
     def pure[A](a: A): IO[A] = Pure { () => a }
+    def now[A](a: A): IO[A] = pure(a)
 
     def eval[A](a: => A): IO[A] = Eval { () => a }
     def delay[A](a: => A): IO[A] = eval(a)
     def apply[A](a: => A): IO[A] = eval(a)
 
-    def suspend[A](ioa: => IO[A]): IO[A] = Suspend(() => ioa)
-    def defer[A](ioa: => IO[A]): IO[A] = suspend(ioa)
+    implicit def ioMonad: Monad[IO] = new Monad[IO] {
+      override def pure[A](value: A): IO[A] = IO.pure(value)
+      override def flatMap[A, B](fa: IO[A])(f: A => IO[B]): IO[B] = fa flatMap f
+      override def tailRecM[A, B](a: A)(f: A => IO[Either[A, B]]): IO[B] = ???
+    }
   }
 
 
 
-  import Password._
-  import User._
+  import cats.syntax.functor._
+  import cats.syntax.flatMap._
 
-  // authenticate impl with for-comprehension
-  def authenticate(username: String, password: String): IO[Boolean] =
+  def sumF[F[_]: Monad](from: Int, to: Int): F[Int] =
+    Monad[F].pure { sumOfRange(from, to) }
+
+  def fibonacciF[F[_]: Monad](num: Int): F[BigInt] =
+    Monad[F].pure { fibonacci(num) }
+
+  def factorialF[F[_]: Monad](num: Int): F[BigInt] =
+    Monad[F].pure { factorial(num) }
+
+  def computeF[F[_]: Monad](from: Int, to: Int): F[BigInt] =
     for {
-      optUser <- IO(getUsers) map { users =>
-        users.find(_.name == username)
-      }
-      authenticated <- IO(getPasswords) map { passwords =>
-        optUser.isDefined && passwords.contains(Password(optUser.get.id, password))
-      }
-    } yield authenticated
-
+      x <- sumF(from, to)
+      y <- fibonacciF(x)
+      z <- factorialF(y.intValue)
+    } yield z
 
 
   println("\n-----")
 
+  def computeWithIO(): Unit = {
 
-  implicit val ec: ExecutionContext = ExecutionContext.global
+    // reify F[] with IO
+    val io: IO[BigInt] = computeF[IO](1, 4)
 
-  IO(getUsers) foreach { users => users foreach println }
-  Thread sleep 500L
-  println("-----")
+    implicit val ec: ExecutionContext = ExecutionContext.global
+    io foreach { result => println(s"result = $result") }
+    //=> 6227020800
 
-  IO(getPasswords) foreach { users => users foreach println }
-  Thread sleep 500L
-  println("-----")
+    Thread sleep 500L
+  }
 
-  println("\n>>> IO#run: authenticate:")
-  authenticate("maggie", "maggie-pw") foreach println
-  authenticate("maggieXXX", "maggie-pw") foreach println
-  authenticate("maggie", "maggie-pwXXX") foreach println
+  def computeWithId(): Unit = {
 
+    import cats.Id
 
-  val checkMaggie: IO[Boolean] = authenticate("maggie", "maggie-pw")
+    // reify F[] with Id
+    val result: Id[BigInt] = computeF[Id](1, 4)
 
-  println("\n>>> IO#runToTry:")
-  printAuthTry(checkMaggie.runToTry)
+    println(s"result = $result")
+    //=> 6227020800
 
-  println("\n>>> IO#runToEither:")
-  printAuthEither(checkMaggie.runToEither)
+    Thread sleep 500L
+  }
 
-  println("\n>>> IO#runToFuture:")
-  checkMaggie.runToFuture onComplete authCallbackTry
-  Thread sleep 500L
+  def computeWithOption(): Unit = {
 
-  println("\n>>> IO#runOnComplete:")
-  checkMaggie runOnComplete authCallbackTry
-  Thread sleep 500L
+    import cats.instances.option._
 
-  println("\n>>> IO#runAsync:")
-  checkMaggie runAsync authCallbackEither
-  Thread sleep 500L
+    // reify F[] with Option
+    val maybeResult: Option[BigInt] = computeF[Option](1, 4)
 
-  println("\n>>> IO.pure:")
-  val io1 = IO.pure { println("immediate side effect"); 5 }
-  Thread sleep 2000L
-  io1 foreach println
-  Thread sleep 2000L
+    maybeResult foreach { result => println(s"result = $result") }
+    //=> 6227020800
 
-  println("\n>>> IO.defer:")
-  val io2 = IO.defer { IO.pure { println("deferred side effect"); 5 } }
-  Thread sleep 2000L
-  io2 foreach println
-  Thread sleep 2000L
+    Thread sleep 500L
+  }
+
+  computeWithIO()
+  computeWithId()
+  computeWithOption()
 
   println("-----\n")
 }

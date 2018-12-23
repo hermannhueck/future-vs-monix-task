@@ -3,29 +3,26 @@ package chap02iomonad
 import chap02iomonad.auth._
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 /*
-  Step 10 makes the abtract 'run' method in trait IO concrete.
-  It is implemented as a pattern match over the subtypes of the ADT: Pure and Eval.
+  Step 10 converts case class IO into trait IO with the abstract method 'run'.
+  IO is an ADT with the two subtypes 'Pure' and 'Eval'
 
-  As 'run' is now a concrete method in trait IO the Function0[A] parameter
-  can no longer have the same name 'run' in order not ot override the base traits method 'run'.
-  I called it 'thunk'.
+  IO.pure creates a Pure instance instead of an IO instance.
+  IO.now is an alias for pure.
+  IO.eval creates a Eval instance instead of an IO instance.
+  IO.delay is an alias for IO.eval.
+  IO.apply is an alias for IO.eval.
 
-  The method IO#run can now be made private.
-  The other IO#run* methods are provided for public use.
+  Having apply it is more natural to create new IO instances.
+  We can just use IO { thunk } instead of IO.eval { thunk }
  */
 object IOApp10 extends App {
 
   trait IO[A] {
 
-    import IO._
-
-    private def run(): A = this match {
-      case Pure(thunk) => thunk()
-      case Eval(thunk) => thunk()
-    }
+    def run: () => A
 
     def map[B](f: A => B): IO[B] = IO { f(run()) }
     def flatMap[B](f: A => IO[B]): IO[B] = IO { f(run()).run() }
@@ -45,19 +42,17 @@ object IOApp10 extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToTry)
-      })
-    }
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
+    // convert Try based callback into an Either based callback
+      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToEither)
-      })
-    }
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
+      runAsync0(ec, callback)
+
+    private def runAsync0(ec: ExecutionContext, callback: Either[Throwable, A] => Unit): Unit =
+      ec.execute(() => callback(runToEither))
 
     // Triggers async evaluation of this IO, executing the given function for the generated result.
     // WARNING: Will not be called if this IO is never completed or if it is completed with a failure.
@@ -72,10 +67,11 @@ object IOApp10 extends App {
 
   object IO {
 
-    private case class Pure[A](thunk: () => A) extends IO[A]
-    private case class Eval[A](thunk: () => A) extends IO[A]
+    private case class Pure[A](run: () => A) extends IO[A]
+    private case class Eval[A](run: () => A) extends IO[A]
 
     def pure[A](a: A): IO[A] = Pure { () => a }
+    def now[A](a: A): IO[A] = pure(a)
 
     def eval[A](a: => A): IO[A] = Eval { () => a }
     def delay[A](a: => A): IO[A] = eval(a)
@@ -84,8 +80,7 @@ object IOApp10 extends App {
 
 
 
-  import Password._
-  import User._
+  import Password._, User._
 
   // authenticate impl with for-comprehension
   def authenticate(username: String, password: String): IO[Boolean] =

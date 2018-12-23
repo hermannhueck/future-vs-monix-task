@@ -3,27 +3,19 @@ package chap02iomonad
 import chap02iomonad.auth._
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 /*
-  Step 9 converts case class IO into trait IO with the abstract method 'run'.
-  IO is an ADT with the two subtypes 'Pure' and 'Eval'
+  Step 9 adds the 'foreach' method to IO. It executes asynchronously and requires an implicit Executioncontext.
 
-  IO.pure creates a Pure instance instead of an IO instance.
-  IO.eval creates a Eval instance instead of an IO instance.
-  IO.delay and IO.apply are aliases for IO.eval.
-
-  Having apply it is more natural to create new IO instances.
-  We can just use IO { thunk } instead of IO.eval { thunk }
+  'foreach' only processes successful results, errors are reported to the ExecutionContext.
  */
 object IOApp09 extends App {
 
-  trait IO[A] {
+  case class IO[A](run: () => A) {
 
-    def run: () => A
-
-    def map[B](f: A => B): IO[B] = IO { f(run()) }
-    def flatMap[B](f: A => IO[B]): IO[B] = IO { f(run()).run() }
+    def map[B](f: A => B): IO[B] = IO { () => f(run()) }
+    def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
 
     // ----- impure sync run* methods
 
@@ -40,19 +32,17 @@ object IOApp09 extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToTry)
-      })
-    }
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
+    // convert Try based callback into an Either based callback
+      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToEither)
-      })
-    }
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
+      runAsync0(ec, callback)
+
+    private def runAsync0(ec: ExecutionContext, callback: Either[Throwable, A] => Unit): Unit =
+      ec.execute(() => callback(runToEither))
 
     // Triggers async evaluation of this IO, executing the given function for the generated result.
     // WARNING: Will not be called if this IO is never completed or if it is completed with a failure.
@@ -66,31 +56,25 @@ object IOApp09 extends App {
   }
 
   object IO {
-
-    private case class Pure[A](run: () => A) extends IO[A]
-    private case class Eval[A](run: () => A) extends IO[A]
-
-    def pure[A](a: A): IO[A] = Pure { () => a }
-
-    def eval[A](a: => A): IO[A] = Eval { () => a }
-    def delay[A](a: => A): IO[A] = eval(a)
-    def apply[A](a: => A): IO[A] = eval(a)
+    def pure[A](a: A): IO[A] = IO { () => a }
+    def eval[A](a: => A): IO[A] = IO { () => a }
   }
 
 
 
-  import Password._, User._
+  import Password._
+  import User._
 
   // authenticate impl with for-comprehension
   def authenticate(username: String, password: String): IO[Boolean] =
     for {
-      optUser <- IO(getUsers) map { users =>
+      optUser <- IO.eval(getUsers) map { users =>
         users.find(_.name == username)
       }
-      authenticated <- IO(getPasswords) map { passwords =>
+      isAuthenticated <- IO.eval(getPasswords) map { passwords =>
         optUser.isDefined && passwords.contains(Password(optUser.get.id, password))
       }
-    } yield authenticated
+    } yield isAuthenticated
 
 
 
@@ -98,11 +82,11 @@ object IOApp09 extends App {
 
   implicit val ec: ExecutionContext = ExecutionContext.global
 
-  IO(getUsers) foreach { users => users foreach println }
+  IO.eval(getUsers) foreach { users => users foreach println }
   Thread sleep 500L
   println("-----")
 
-  IO(getPasswords) foreach { users => users foreach println }
+  IO.eval(getPasswords) foreach { users => users foreach println }
   Thread sleep 500L
   println("-----")
 
@@ -121,7 +105,8 @@ object IOApp09 extends App {
   printAuthEither(checkMaggie.runToEither)
 
   println("\n>>> IO#runToFuture:")
-  checkMaggie.runToFuture onComplete authCallbackTry
+  val future: Future[Boolean] = checkMaggie.runToFuture
+  future onComplete authCallbackTry
   Thread sleep 500L
 
   println("\n>>> IO#runOnComplete:")

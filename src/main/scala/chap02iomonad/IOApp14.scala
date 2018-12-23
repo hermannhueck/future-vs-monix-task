@@ -1,15 +1,16 @@
 package chap02iomonad
 
+import cats.Monad
 import chap02iomonad.auth._
 
-import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.util.{Failure, Success, Try}
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Try
 
 /*
-  Step 14 provides IO.fromFuture.
-  These methods (eagerly) converts a Future into an IO.
-  Using IO.defer it can be made a lazy IO.
+  In step 14 I added the subtype FlatMap to the ADT IO and expanded the 'run' method accordingly.
+  The Method IO#flatMap just creates an instance of FlatMap.
+  IO#map is implemented in terms of IO#flatMap and IO.pure.
+  Now IO is trampolined and hence stack-safe.
  */
 object IOApp14 extends App {
 
@@ -42,19 +43,17 @@ object IOApp14 extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToTry)
-      })
-    }
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
+    // convert Try based callback into an Either based callback
+      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      ec.execute(new Runnable {
-        override def run(): Unit = callback(runToEither)
-      })
-    }
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
+      runAsync0(ec, callback)
+
+    private def runAsync0(ec: ExecutionContext, callback: Either[Throwable, A] => Unit): Unit =
+      ec.execute(() => callback(runToEither))
 
     // Triggers async evaluation of this IO, executing the given function for the generated result.
     // WARNING: Will not be called if this IO is never completed or if it is completed with a failure.
@@ -75,6 +74,7 @@ object IOApp14 extends App {
     private case class FlatMap[A, B](src: IO[A], f: A => IO[B]) extends IO[B]
 
     def pure[A](a: A): IO[A] = Pure { () => a }
+    def now[A](a: A): IO[A] = pure(a)
 
     def eval[A](a: => A): IO[A] = Eval { () => a }
     def delay[A](a: => A): IO[A] = eval(a)
@@ -83,61 +83,81 @@ object IOApp14 extends App {
     def suspend[A](ioa: => IO[A]): IO[A] = Suspend(() => ioa)
     def defer[A](ioa: => IO[A]): IO[A] = suspend(ioa)
 
-    def fromTry[A](tryy: Try[A]): IO[A] = IO {
-      tryy match {
-        case Failure(t) => throw t
-        case Success(value) => value
-      }
-    }
-
-    def fromEither[A](either: Either[Throwable, A]): IO[A] = IO {
-      either match {
-        case Left(t) => throw t
-        case Right(value) => value
-      }
-    }
-
-    def fromFuture[A](future: Future[A]): IO[A] =
-      future.value match {
-        case Some(try0) => fromTry(try0)
-        case None => IO.eval { Await.result(future, Duration.Inf) } // eval is lazy!
-      }
-  }
-
-
-
-  def futureGetUsers(implicit ec: ExecutionContext): Future[Seq[User]] = {
-    Future {
-      println("===> side effect <===")
-      User.getUsers
+    implicit def ioMonad: Monad[IO] = new Monad[IO] {
+      override def pure[A](value: A): IO[A] = IO.pure(value)
+      override def flatMap[A, B](fa: IO[A])(f: A => IO[B]): IO[B] = fa flatMap f
+      override def tailRecM[A, B](a: A)(f: A => IO[Either[A, B]]): IO[B] = ???
     }
   }
 
-  {
-    // EC needed to turn a Future into an IO
-    implicit val ec: ExecutionContext = ExecutionContext.global
 
-    println("\n>>> IO.fromFuture(future)")
-    println("----- side effect performed eagerly")
 
-    val io = IO.fromFuture { futureGetUsers }
-    io foreach { users => users foreach println } // prints "side effect"
-    io foreach { users => users foreach println }
-    Thread sleep 1000L
-  }
+  import Password._
+  import User._
 
-  {
-    // EC needed to turn a Future into an IO
-    implicit val ec: ExecutionContext = ExecutionContext.global
+  // authenticate impl with for-comprehension
+  def authenticate(username: String, password: String): IO[Boolean] =
+    for {
+      optUser <- IO(getUsers) map { users =>
+        users.find(_.name == username)
+      }
+      authenticated <- IO(getPasswords) map { passwords =>
+        optUser.isDefined && passwords.contains(Password(optUser.get.id, password))
+      }
+    } yield authenticated
 
-    println("\n>>> IO.defer(IO.fromFuture(future))")
-    println("----- side effect performed lazily")
-    val io = IO.defer { IO.fromFuture { futureGetUsers } }
 
-    io foreach { users => users foreach println } // prints "side effect"
-    io foreach { users => users foreach println } // prints "side effect"
-    Thread sleep 1000L
-  }
+
+  println("\n-----")
+
+
+  implicit val ec: ExecutionContext = ExecutionContext.global
+
+  IO(getUsers) foreach { users => users foreach println }
+  Thread sleep 500L
+  println("-----")
+
+  IO(getPasswords) foreach { users => users foreach println }
+  Thread sleep 500L
+  println("-----")
+
+  println("\n>>> IO#run: authenticate:")
+  authenticate("maggie", "maggie-pw") foreach println
+  authenticate("maggieXXX", "maggie-pw") foreach println
+  authenticate("maggie", "maggie-pwXXX") foreach println
+
+
+  val checkMaggie: IO[Boolean] = authenticate("maggie", "maggie-pw")
+
+  println("\n>>> IO#runToTry:")
+  printAuthTry(checkMaggie.runToTry)
+
+  println("\n>>> IO#runToEither:")
+  printAuthEither(checkMaggie.runToEither)
+
+  println("\n>>> IO#runToFuture:")
+  checkMaggie.runToFuture onComplete authCallbackTry
+  Thread sleep 500L
+
+  println("\n>>> IO#runOnComplete:")
+  checkMaggie runOnComplete authCallbackTry
+  Thread sleep 500L
+
+  println("\n>>> IO#runAsync:")
+  checkMaggie runAsync authCallbackEither
+  Thread sleep 500L
+
+  println("\n>>> IO.pure:")
+  val io1 = IO.pure { println("immediate side effect"); 5 }
+  Thread sleep 2000L
+  io1 foreach println
+  Thread sleep 2000L
+
+  println("\n>>> IO.defer:")
+  val io2 = IO.defer { IO.pure { println("deferred side effect"); 5 } }
+  Thread sleep 2000L
+  io2 foreach println
+  Thread sleep 2000L
 
   println("-----\n")
 }
