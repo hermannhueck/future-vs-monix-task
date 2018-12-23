@@ -2,17 +2,15 @@ package chap02iomonad
 
 import chap02iomonad.auth._
 
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 
 /*
-  In step 11 I expanded the ADT IO and added a new subtype 'Suspend' and expanded the 'run' method accordingly.
-  Pure and Eval take a thunk of type () => A whereas Suspend takes a thunk of type () => IO[A].
-  This just suspends/defers the given thunk making it lazy in case it was eager.
-
-  IO.suspend and the alias IO.defer just create a Suspend instance.
+  Step 15 provides IO.deferFuture which can make the Future lazy.
+  IO.deferFuture(f) is just an alias for IO.defer { IO.fromFuture(f) }
  */
-object IOApp11 extends App {
+object IOApp15 extends App {
 
   trait IO[A] {
 
@@ -22,10 +20,11 @@ object IOApp11 extends App {
       case Pure(thunk) => thunk()
       case Eval(thunk) => thunk()
       case Suspend(thunk) => thunk().run()
+      case FlatMap(src, f) => f(src.run()).run()
     }
 
-    def map[B](f: A => B): IO[B] = IO { f(run()) }
-    def flatMap[B](f: A => IO[B]): IO[B] = IO { f(run()).run() }
+    def map[B](f: A => B): IO[B] = flatMap(a => pure(f(a)))
+    def flatMap[B](f: A => IO[B]): IO[B] = FlatMap(this, f)
 
     // ----- impure sync run* methods
 
@@ -72,6 +71,7 @@ object IOApp11 extends App {
     private case class Pure[A](thunk: () => A) extends IO[A]
     private case class Eval[A](thunk: () => A) extends IO[A]
     private case class Suspend[A](thunk: () => IO[A]) extends IO[A]
+    private case class FlatMap[A, B](src: IO[A], f: A => IO[B]) extends IO[B]
 
     def pure[A](a: A): IO[A] = Pure { () => a }
 
@@ -81,76 +81,65 @@ object IOApp11 extends App {
 
     def suspend[A](ioa: => IO[A]): IO[A] = Suspend(() => ioa)
     def defer[A](ioa: => IO[A]): IO[A] = suspend(ioa)
+
+    def fromTry[A](tryy: Try[A]): IO[A] = IO {
+      tryy match {
+        case Failure(t) => throw t
+        case Success(value) => value
+      }
+    }
+
+    def fromEither[A](either: Either[Throwable, A]): IO[A] = IO {
+      either match {
+        case Left(t) => throw t
+        case Right(value) => value
+      }
+    }
+
+    def fromFuture[A](fa: Future[A]): IO[A] =
+      fa.value match {
+        case Some(try0) => fromTry(try0)
+        case None => IO.eval { Await.result(fa, Duration.Inf) } // eval is lazy!
+      }
+
+    def deferFuture[A](fa: => Future[A]): IO[A] =
+      defer(IO.fromFuture(fa))
   }
 
 
 
-  import Password._
-  import User._
+  def futureGetUsers(implicit ec: ExecutionContext): Future[Seq[User]] = {
+    Future {
+      println("===> side effect <===")
+      User.getUsers
+    }
+  }
 
-  // authenticate impl with for-comprehension
-  def authenticate(username: String, password: String): IO[Boolean] =
-    for {
-      optUser <- IO(getUsers) map { users =>
-        users.find(_.name == username)
-      }
-      authenticated <- IO(getPasswords) map { passwords =>
-        optUser.isDefined && passwords.contains(Password(optUser.get.id, password))
-      }
-    } yield authenticated
+  {
+    // EC needed to turn a Future into an IO
+    implicit val ec: ExecutionContext = ExecutionContext.global
 
+    println("\n>>> IO.defer(IO.fromFuture(future))")
+    println("----- side effect performed lazily")
+    val io = IO.defer { IO.fromFuture { futureGetUsers } }
 
+    io foreach { users => users foreach println } // prints "side effect"
+    io foreach { users => users foreach println } // prints "side effect"
+    Thread sleep 1000L
+  }
 
-  println("\n-----")
+  {
+    // EC needed to turn a Future into an IO
+    implicit val ec: ExecutionContext = ExecutionContext.global
 
+    println("\n>>> IO.deferFuture(future)")
+    println("----- side effect performed lazily")
+    val io = IO.deferFuture { futureGetUsers }
 
-  implicit val ec: ExecutionContext = ExecutionContext.global
-
-  IO(getUsers) foreach { users => users foreach println }
-  Thread sleep 500L
-  println("-----")
-
-  IO(getPasswords) foreach { users => users foreach println }
-  Thread sleep 500L
-  println("-----")
-
-  println("\n>>> IO#run: authenticate:")
-  authenticate("maggie", "maggie-pw") foreach println
-  authenticate("maggieXXX", "maggie-pw") foreach println
-  authenticate("maggie", "maggie-pwXXX") foreach println
-
-
-  val checkMaggie: IO[Boolean] = authenticate("maggie", "maggie-pw")
-
-  println("\n>>> IO#runToTry:")
-  printAuthTry(checkMaggie.runToTry)
-
-  println("\n>>> IO#runToEither:")
-  printAuthEither(checkMaggie.runToEither)
-
-  println("\n>>> IO#runToFuture:")
-  checkMaggie.runToFuture onComplete authCallbackTry
-  Thread sleep 500L
-
-  println("\n>>> IO#runOnComplete:")
-  checkMaggie runOnComplete authCallbackTry
-  Thread sleep 500L
-
-  println("\n>>> IO#runAsync:")
-  checkMaggie runAsync authCallbackEither
-  Thread sleep 500L
-
-  println("\n>>> IO.pure:")
-  val io1 = IO.pure { println("immediate side effect"); 5 }
-  Thread sleep 2000L
-  io1 foreach println
-  Thread sleep 2000L
-
-  println("\n>>> IO.defer:")
-  val io2 = IO.defer { IO.pure { println("deferred side effect"); 5 } }
-  Thread sleep 2000L
-  io2 foreach println
-  Thread sleep 2000L
+    io foreach { users => users foreach println } // prints "side effect"
+    io foreach { users => users foreach println } // prints "side effect"
+    Thread sleep 1000L
+  }
 
   println("-----\n")
 }

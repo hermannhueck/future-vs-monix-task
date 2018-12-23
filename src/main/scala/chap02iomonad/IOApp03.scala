@@ -1,5 +1,9 @@
 package chap02iomonad
 
+/*
+  In this step the Function0[A] is named 'run' and wrapped in a case class.
+  To run the program we must unwrap the 'run' function and invoke it.
+ */
 object IOApp03 extends App {
 
   // IO[A] wraps a Function0[A]

@@ -6,7 +6,12 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 /*
-  added async run* methods
+  In step 7 I added three async run* methods: runToFuture, runOnComplete, runAsync.
+  All three accept an implicit ExecutionContext.
+
+  'runToFuture' runs 'run' in a Future and returns it.
+  'runOnComplete' takes a Try based callback and invokes a Runnable with 'runToTry' in the ExecutionContext.
+  'runAsync' takes a Either based callback and invokes a Runnable with 'runToEither' in the ExecutionContext.
  */
 object IOApp07 extends App {
 

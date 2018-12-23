@@ -4,6 +4,14 @@ import chap02iomonad.auth._
 
 import scala.util.Try
 
+/*
+  Before adding asynchronous run* methods in step 7 I used another example program.
+  The previous interactive program is not very suitable to demonstrate asynchrony.
+
+  The 'authenticate' method accesses the files 'users.txt' and 'passwords.txt'
+  to check a username and a password and returns true if the specified username
+  exists in 'users.txt' and the specified password matches with the user's passord in 'passwords.txt'.
+ */
 object IOApp06b extends App {
 
   // IO[A] wraps a Function0[A].
@@ -33,7 +41,6 @@ object IOApp06b extends App {
   import Password._
   import User._
 
-  // authenticate impl with for-comprehension
   def authenticate(username: String, password: String): IO[Boolean] =
     for {
       optUser <- IO.eval(getUsers) map { users =>

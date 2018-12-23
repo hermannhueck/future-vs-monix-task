@@ -2,6 +2,10 @@ package chap02iomonad
 
 import scala.util.Try
 
+/*
+  The original IO#run() might thow an exception when run.
+  In step 6a I added two additional synchronous run* methods which do not throw an exception: 'runToTry' and 'runToEither'.
+ */
 object IOApp06a extends App {
 
   // IO[A] wraps a Function0[A].

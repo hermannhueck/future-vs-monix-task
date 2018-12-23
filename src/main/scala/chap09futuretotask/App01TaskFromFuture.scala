@@ -7,7 +7,7 @@ object App01TaskFromFuture extends App {
 
   println(s"\n----- Main $currentThread")
 
-  import chap08taskbuiders.library._
+  import library._
 
   import Scheduler.Implicits.global
 

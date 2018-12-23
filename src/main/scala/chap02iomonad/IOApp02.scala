@@ -1,5 +1,10 @@
 package chap02iomonad
 
+/*
+  Making the programm a Function0[A] converts the program to a PURE description
+  of the side effects which are not yet performed.
+  Side effects are produced when the program is invoked, not earlier.
+ */
 object IOApp02 extends App {
 
   println("\n-----")

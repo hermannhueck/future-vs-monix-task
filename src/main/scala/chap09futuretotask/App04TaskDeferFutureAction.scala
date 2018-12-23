@@ -7,7 +7,7 @@ object App04TaskDeferFutureAction extends App {
 
   println(s"\n----- Main $currentThread")
 
-  import chap08taskbuiders.library._
+  import library._
 
   val task = Task.deferFutureAction(implicit scheduler => futureFactorial(10))
 

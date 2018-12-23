@@ -1,10 +1,17 @@
 package chap02iomonad
 
+/*
+  In step 5 I added the IO companion object, which provides 'pure' and 'eval'.
+  With 'pure' we can lift a pure value of type A into the IO context.
+  'pure' is eager, i.e. executed immediately.
+  'eval' takes a thunk (a block of computation) and turns it into a Function0[A] and wraps it into IO.
+  'eval is lazy.
+
+  This allows us to simplify the for-comprehension in our program a bit.
+  We no longer need to specify functions in order to create instances of IO:
+ */
 object IOApp05 extends App {
 
-  // IO[A] wraps a Function0[A].
-  // With map, flatMap and pure it is a Monad usable in a for-comprehension
-  //
   case class IO[A](run: () => A) {
 
     def map[B](f: A => B): IO[B] = IO { () => f(run()) }

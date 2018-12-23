@@ -3,27 +3,29 @@ package chap02iomonad
 import chap02iomonad.auth._
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 
 /*
-  Step 9 converts case class IO into trait IO with the abstract method 'run'.
-  IO is an ADT with the two subtypes 'Pure' and 'Eval'
-
-  IO.pure creates a Pure instance instead of an IO instance.
-  IO.eval creates a Eval instance instead of an IO instance.
-  IO.delay and IO.apply are aliases for IO.eval.
-
-  Having apply it is more natural to create new IO instances.
-  We can just use IO { thunk } instead of IO.eval { thunk }
+  In step 12 I added the subtype FlatMap to the ADT IO and expanded the 'run' method accordingly.
+  The Method IO#flatMap just creates an instance of FlatMap.
+  IO#map is implemented in terms of IO#flatMap and IO.pure.
+  Now IO is trampolined and hence stack-safe.
  */
-object IOApp09 extends App {
+object IOApp12 extends App {
 
   trait IO[A] {
 
-    def run: () => A
+    import IO._
 
-    def map[B](f: A => B): IO[B] = IO { f(run()) }
-    def flatMap[B](f: A => IO[B]): IO[B] = IO { f(run()).run() }
+    private def run(): A = this match {
+      case Pure(thunk) => thunk()
+      case Eval(thunk) => thunk()
+      case Suspend(thunk) => thunk().run()
+      case FlatMap(src, f) => f(src.run()).run()
+    }
+
+    def map[B](f: A => B): IO[B] = flatMap(a => pure(f(a)))
+    def flatMap[B](f: A => IO[B]): IO[B] = FlatMap(this, f)
 
     // ----- impure sync run* methods
 
@@ -67,19 +69,25 @@ object IOApp09 extends App {
 
   object IO {
 
-    private case class Pure[A](run: () => A) extends IO[A]
-    private case class Eval[A](run: () => A) extends IO[A]
+    private case class Pure[A](thunk: () => A) extends IO[A]
+    private case class Eval[A](thunk: () => A) extends IO[A]
+    private case class Suspend[A](thunk: () => IO[A]) extends IO[A]
+    private case class FlatMap[A, B](src: IO[A], f: A => IO[B]) extends IO[B]
 
     def pure[A](a: A): IO[A] = Pure { () => a }
 
     def eval[A](a: => A): IO[A] = Eval { () => a }
     def delay[A](a: => A): IO[A] = eval(a)
     def apply[A](a: => A): IO[A] = eval(a)
+
+    def suspend[A](ioa: => IO[A]): IO[A] = Suspend(() => ioa)
+    def defer[A](ioa: => IO[A]): IO[A] = suspend(ioa)
   }
 
 
 
-  import Password._, User._
+  import Password._
+  import User._
 
   // authenticate impl with for-comprehension
   def authenticate(username: String, password: String): IO[Boolean] =
@@ -95,6 +103,7 @@ object IOApp09 extends App {
 
 
   println("\n-----")
+
 
   implicit val ec: ExecutionContext = ExecutionContext.global
 
@@ -131,6 +140,18 @@ object IOApp09 extends App {
   println("\n>>> IO#runAsync:")
   checkMaggie runAsync authCallbackEither
   Thread sleep 500L
+
+  println("\n>>> IO.pure:")
+  val io1 = IO.pure { println("immediate side effect"); 5 }
+  Thread sleep 2000L
+  io1 foreach println
+  Thread sleep 2000L
+
+  println("\n>>> IO.defer:")
+  val io2 = IO.defer { IO.pure { println("deferred side effect"); 5 } }
+  Thread sleep 2000L
+  io2 foreach println
+  Thread sleep 2000L
 
   println("-----\n")
 }

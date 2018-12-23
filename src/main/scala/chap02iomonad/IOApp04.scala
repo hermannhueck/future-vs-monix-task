@@ -1,10 +1,12 @@
 package chap02iomonad
 
+/*
+  In step 4 we add map and flatMap to the IO case class.
+  This allows us to compose small IO instances to a bigger program.
+  Composition can easily be done in a for-comprehension.
+ */
 object IOApp04 extends App {
 
-  // IO[A] wraps a Function0[A].
-  // With map, flatMap and pure it is a Monad usable in a for-comprehension
-  //
   case class IO[A](run: () => A) {
 
     def map[B](f: A => B): IO[B] = IO { () => f(run()) }

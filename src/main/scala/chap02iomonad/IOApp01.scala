@@ -1,5 +1,8 @@
 package chap02iomonad
 
+/*
+  An IO program with side effects is IMPURE.
+ */
 object IOApp01 extends App {
 
   println("\n-----")
