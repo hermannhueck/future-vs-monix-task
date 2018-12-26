@@ -215,7 +215,7 @@ the presentation also gives an introduction to Monix Task.
 1. [The IO Monad](#IOMonad)
 1. [Is Future referentially transparent?](#FutureReferentiallyTransparent)
 1. [What is Monix Task?](#WhatIsMonixTask)
-1. [Task Execution](#TaskExecution)
+1. [Task Evaluation](#TaskEvaluation)
 1. [Task Cancelation](#TaskCancelation)
 1. [Task Builders](#TaskBuilders)
 1. [Converting Future to Task](#FutureToTask)
@@ -225,9 +225,9 @@ the presentation also gives an introduction to Monix Task.
 1. [Async Boundaries](#AsyncBoundaries)
 1. [Schedulers](#Schedulers)
 1. [Error Handling](#ErrorHandling)
-1. [TaskApp](#TaskApp)
+1. [Parallelism](#Parallelism)
 1. [Races](#Races)
-1. [Parallelizm](#Parallelizm)
+1. [TaskApp](#TaskApp)
 1. [CompletableFuture](#CompletableFuture)
 1. [Resources](#Resources)
 
@@ -661,8 +661,10 @@ name: WhatIsMonixTask
 <table>
     <tr> <th></th><th><u>Future</u></th><th><u>Task</u></th> </tr>
     <tr> <td>Evaluation</td><td>eager / strict</td><td>lazy / non-strict</td> </tr>
+    <tr> <td>Control of side effects</td><td>no</td><td>yes</td> </tr>
     <tr> <td>Memoization</td><td>always</td><td>possible, default: no</td> </tr>
     <tr> <td>Referential Transparency &nbsp;</td><td>no</td><td>yes</td> </tr>
+    <tr> <td>Control of side effects</td><td>no</td><td>yes</td> </tr>
     <tr> <td>Supports cancelation</td><td>no</td><td>yes</td> </tr>
     <tr> <td>Supports blocking</td><td>yes</td><td>no (possible via Future)</td> </tr>
     <tr> <td>Supports sync execution</td><td>no</td><td>yes</td> </tr>
@@ -676,15 +678,29 @@ name: WhatIsMonixTask
 ---
 
 class: middle, center
-name: TaskExecution
+name: TaskEvaluation
 
-# 5. Task Execution
+# 5. Task Evaluation
 <br/>
 <br/>
 <br/>
 <br/>
 <br/>
 &nbsp;
+
+---
+
+## Evaluation
+<br/>
+<br/>
+
+<table>
+    <tr> <th></th><th><u>Eager</u></th><th><u>Lazy</u></th> </tr>
+    <tr> <td>Synchronous</td><td>A</td><td>() => A</td> </tr>
+    <tr> <td></td><td></td><td>Eval[A]</td> </tr>
+    <tr> <td>Asynchronous</td><td>(A => Unit) => Unit</td><td>() => (A => Unit) => Unit</td> </tr>
+    <tr> <td></td><td>Future[A]</td><td>Task[A], IO[A]</td> </tr>
+</table>
 
 ---
 
@@ -2435,10 +2451,371 @@ name: ErrorHandling
 
 ---
 
-class: middle, center
-name: TaskApp
+## Signaling of *Task* Errors
+<br/>
 
-# 14. TaskApp
+- Errors in the *Task* impl are signaled to the run* methods, e.g. in *runAsync*
+
+```scala
+val task: Task[Int] = Task(Random.nextInt).flatMap {
+  case even if even % 2 == 0 =>
+    Task.now(even)
+  case odd =>
+    throw new IllegalStateException(odd.toString)   // Error in task definition
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task runAsync println
+//=> Right(-924040280)
+
+task runAsync println
+//=> Left(java.lang.IllegalStateException: 834919637)
+```
+
+---
+
+## Signaling of Callback Errors
+<br/>
+
+- Errors in the callback are logged to the *UncaughtExceptionReporter* (stderr by default).
+
+```scala
+// Ensures asynchronous execution, just to show that
+// the action doesn't happen on the current thread.
+val source =
+  Task(sumOfRange(1, 100))
+    .delayExecution(10.seconds)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task runAsync { r => throw new IllegalStateException(r.toString) }
+
+// After 1 second, this will log the whole stack trace:
+java.lang.IllegalStateException: Right(2)
+      at chap14errorhandling.App02SignalingErrorInCallback$.$anonfun$new$1(App02SignalingErrorInCallback.scala:19)
+      at monix.execution.Callback$$anon$3.onSuccess(Callback.scala:145)
+      // stack trace continued ...
+```
+
+---
+
+## Overriding the Error Logging
+<br/>
+
+- Override *UncaughtExceptionReporter* to log to a different log destination.
+
+```scala
+import monix.execution.UncaughtExceptionReporter
+import org.slf4j.LoggerFactory
+
+val reporter = UncaughtExceptionReporter { ex =>
+  val logger = LoggerFactory.getLogger(this.getClass) // log with SLF4J
+  logger.error("Uncaught exception", ex)
+}
+
+implicit val global: Scheduler = Scheduler(Scheduler.global, reporter)
+
+val source =
+  Task(sumOfRange(1, 100))
+    .delayExecution(10.seconds)
+
+task.runAsync { r => throw new IllegalStateException(r.toString) }
+// logs Exception with SLF4J
+```
+
+---
+
+## *Task#timout*
+<br/>
+
+- triggers a *TimoutException* after the specified time.
+
+```scala
+val source =
+  Task(sumOfRange(1, 100))
+    .delayExecution(10.seconds)
+
+// Triggers TimeoutException if the source does not
+// complete in 3 seconds after runAsync
+val timedOut = source.timeout(3.seconds)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+timedOut runAsync println
+//=> Left(java.util.concurrent.TimeoutException: Task timed-out after 3 seconds of inactivity)
+```
+
+---
+
+## *Task#timoutTo*
+<br/>
+
+- falls back to another *Task* after the specified time.
+
+```scala
+val source =
+  Task(sumOfRange(1, 100))
+    .delayExecution(10.seconds)
+
+// Triggers TimeoutException if the source does not
+// complete in 3 seconds after runAsync
+val timedOut = source.timeoutTo(
+  3.seconds,
+  Task.raiseError(new TimeoutException("That took too long!")) // Fallback Task
+)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+timedOut runAsync println
+//=> Left(java.util.concurrent.TimeoutException: That took too long!)
+```
+
+---
+
+## *Task#onErrorHandleWith*
+<br/>
+
+- provides a function *Throwable => Task[B]* which returns a (lazy) fallback *Task* in case an exception is thrown.
+
+```scala
+val source =
+  Task(sumOfRange(1, 100))
+    .delayExecution(10.seconds)
+    .timeout(3.seconds)
+
+val recovered = source.onErrorHandleWith {
+  case _: TimeoutException =>
+    // Oh, we know about timeouts, recover it
+    Task.now("Recovered!")
+  case other =>
+    // We have no idea what happened, raise error!
+    Task.raiseError(other)
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+recovered.runToFuture foreach println
+//=> Recovered!
+```
+
+---
+
+## *Task#onErrorRecoverWith*
+<br/>
+
+- provides a *PartialFunction[Throwable, Task[B]]* which returns a (lazy) fallback *Task* in case an exception is thrown.
+
+- avoids the 'other' case in the previous example.
+
+```scala
+val source =
+  Task(sumOfRange(1, 100))
+    .delayExecution(10.seconds)
+    .timeout(3.seconds)
+
+val recovered = source.onErrorRecoverWith {
+  case _: TimeoutException =>
+    // Oh, we know about timeouts, recover it
+    Task.now("Recovered!")
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+recovered.runToFuture foreach println
+//=> Recovered!
+```
+
+---
+
+## *Task#onErrorHandle*
+<br/>
+
+- provides a function *Throwable => B* which returns a (eager) fallback value in case an exception is thrown.
+
+```scala
+val source =
+  Task(sumOfRange(1, 100))
+    .delayExecution(10.seconds)
+    .timeout(3.seconds)
+
+val recovered = source.onErrorHandle {
+  case _: TimeoutException =>
+    // Oh, we know about timeouts, recover it
+    "Recovered!"
+  case other =>
+    throw other // Rethrowing
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+recovered.runToFuture foreach println
+//=> Recovered!
+```
+
+---
+
+## *Task#onErrorRecover*
+<br/>
+
+- provides a *PartialFunction[Throwable, B]* which returns a (eager) fallback value in case an exception is thrown.
+
+- avoids the 'other' case in the previous example.
+
+```scala
+val source =
+  Task(sumOfRange(1, 100))
+    .delayExecution(10.seconds)
+    .timeout(3.seconds)
+
+val recovered = source.onErrorRecover {
+  case _: TimeoutException =>
+    // Oh, we know about timeouts, recover it
+    "Recovered!"
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+recovered.runToFuture foreach println
+//=> Recovered!
+```
+
+---
+
+## *Task#onErrorRestart*
+<br/>
+
+- specifies max. retries in case *Task* execution throws an exception.
+
+```scala
+val source = Task(Random.nextInt).flatMap {
+  case even if even % 2 == 0 =>
+    Task.now(even)
+  case other =>
+    Task.raiseError(new IllegalStateException(other.toString))
+}
+
+// Will retry 2 times for a random even number, or fail if the maxRetries is reached!
+val randomEven: Task[Int] = source.onErrorRestart(maxRetries = 3)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+randomEven runAsync println
+```
+
+---
+
+## *Task#onErrorRestartIf*
+<br/>
+
+- keeps retrying in case of an exception as long as the specified predicate *Throwable => Boolean* is true.
+
+```scala
+val source = Task(Random.nextInt).flatMap {
+  case even if even % 2 == 0 =>
+    Task.now(even)
+  case other =>
+    Task.raiseError(new IllegalStateException(other.toString))
+}
+
+// Will keep retrying for as long as the source fails with an IllegalStateException
+val randomEven: Task[Int] = source.onErrorRestartIf {
+  case _: IllegalStateException => true
+  case _ => false
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+randomEven runAsync println
+```
+
+---
+
+## Retry with Backoff
+<br/>
+
+- *onErrorHandleWith* allows us to implement a retry with backoff.
+
+```scala
+val source = Task(Random.nextInt).flatMap {
+  case even if even % 2 == 0 =>
+    Task.now(even)
+  case other =>
+    Task.raiseError(new IllegalStateException(other.toString))
+}
+
+def retryBackoff[A](source: Task[A], maxRetries: Int, firstDelay: FiniteDuration): Task[A] =
+  source.onErrorHandleWith {
+    case ex: Exception =>
+      if (maxRetries > 0) {
+        println(s"Retrying ... maxRetries = $maxRetries, nextDelay = ${firstDelay * 2}")
+        // Recursive call, it's OK as Monix is stack-safe
+        retryBackoff(source, maxRetries - 1, firstDelay * 2).delayExecution(firstDelay)
+      } else
+        Task.raiseError(ex)
+  }
+
+val randomEven: Task[Int] = retryBackoff(source, 3, 1.second)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+println(Await.result(randomEven.runToFuture, 10.seconds))
+```
+
+---
+
+## *Task#materialize*
+<br/>
+
+- converts a *Task[A]* into a *Task[Try[A]]*, thus exposing errors.
+
+```scala
+val source = Task.raiseError[Int](new IllegalStateException)
+
+val materialized: Task[Try[Int]] = source.materialize
+
+// Now we can flatMap over both success and failure:
+val recovered = materialized.flatMap {
+  case Success(value) => Task.now(value)
+  case Failure(_) => Task.now(0)
+}
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+recovered.runToFuture foreach println
+//=> 0
+```
+
+---
+
+## *Task#dematerialize*
+<br/>
+
+- converts a *Task[A]* into a *Task[A]*, thus hiding errors.
+
+```scala
+val source = Task.raiseError[Int](new IllegalStateException)
+
+val materialized: Task[Try[Int]] = source.materialize
+
+// Hiding errors again (restores the original Task)
+val dematerialized: Task[Int] = materialized.dematerialize
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+dematerialized runAsync new Callback[Throwable, Int] {
+  def onSuccess(result: Int): Unit = println(s"result = $result")
+  def onError(ex: Throwable): Unit = println(s"ERROR: ${ex.toString}")
+}
+//=> ERROR: java.lang.IllegalStateException
+```
+
+---
+
+class: middle, center
+name: Parallelism
+
+# 14. Parallelism
 <br/>
 <br/>
 <br/>
@@ -2462,9 +2839,9 @@ name: Races
 ---
 
 class: middle, center
-name: Parallelizm
+name: TaskApp
 
-# 16. Parallelizm
+# 16. TaskApp
 <br/>
 <br/>
 <br/>

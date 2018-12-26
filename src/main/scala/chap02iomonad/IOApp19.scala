@@ -25,7 +25,7 @@ object IOApp19 extends App {
       case Eval(thunk) => thunk()
       case Suspend(thunk) => thunk().run
       case FlatMap(src, f) => f(src.run).run
-      case FutureToTask(fEcToFuture) => fromFuture(fEcToFuture(ec)).run(ec)
+      case FutureToTask(ec2Future) => fromFuture(ec2Future(ec)).run(ec)
     }
 
     def map[B](f: A => B): IO[B] = flatMap(a => pure(f(a)))
@@ -46,16 +46,13 @@ object IOApp19 extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
-      // convert Try based callback into an Either based callback
-      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
-    }
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
+      runAsync(ea => callback(ea.toTry)) // convert Try based callback into an Either based callback
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
       runAsync0(ec, callback)
-    }
 
     private val runAsync0: (ExecutionContext, Either[Throwable, A] => Unit) => Unit = {
       (ec: ExecutionContext, callback: Either[Throwable, A] => Unit) =>
@@ -122,8 +119,8 @@ object IOApp19 extends App {
       runIt(f)
     }
 
-    def deferFutureAction[A](fEcToFuture: ExecutionContext => Future[A]): IO[A] =
-      FutureToTask(fEcToFuture)
+    def deferFutureAction[A](ec2Future: ExecutionContext => Future[A]): IO[A] =
+      FutureToTask(ec2Future)
 
     implicit def ioMonad: Monad[IO] = new Monad[IO] {
       override def pure[A](value: A): IO[A] = IO.pure(value)

@@ -44,8 +44,7 @@ object IOApp14 extends App {
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
     def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
-    // convert Try based callback into an Either based callback
-      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
+      runAsync(ea => callback(ea.toTry)) // convert Try based callback into an Either based callback
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
