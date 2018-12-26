@@ -217,9 +217,9 @@ the presentation also gives an introduction to Monix Task.
 1. [What is Monix Task?](#WhatIsMonixTask)
 1. [Task Evaluation](#TaskEvaluation)
 1. [Task Cancelation](#TaskCancelation)
+1. [Memoization](#Memoization)
 1. [Task Builders](#TaskBuilders)
 1. [Converting Future to Task](#FutureToTask)
-1. [Memoization](#Memoization)
 1. [Task as Monad](#TaskAsMonad)
 1. [Tail Recursive Loops](#TailRecursiveLoops)
 1. [Async Boundaries](#AsyncBoundaries)
@@ -932,7 +932,7 @@ failed foreach println
 class: middle, center
 name: TaskCancelation
 
-# 8. Task Cancelation
+# 6. Task Cancelation
 <br/>
 <br/>
 <br/>
@@ -1462,7 +1462,7 @@ task runAsync printCallback
 class: middle, center
 name: FutureToTask
 
-# 8. Converting Future to Task
+# 9. Converting Future to Task
 <br/>
 <br/>
 <br/>
@@ -1648,7 +1648,7 @@ object library {
 class: middle, center
 name: TaskAsMonad
 
-# 9. Task as Monad
+# 10. Task as Monad
 <br/>
 <br/>
 <br/>
@@ -1811,7 +1811,7 @@ maybeResult foreach { result => println(s"result = ${result}") }
 class: middle, center
 name: TailRecursiveLoops
 
-# 10. Tail Recursive Loops
+# 11. Tail Recursive Loops
 <br/>
 <br/>
 <br/>
@@ -1931,7 +1931,7 @@ task foreach println
 class: middle, center
 name: AsyncBoundaries
 
-# 11. Async Boundaries
+# 12. Async Boundaries
 <br/>
 <br/>
 <br/>
@@ -2167,7 +2167,7 @@ Task no 2 finished on Thread: SingleThreadScheduler-587
 class: middle, center
 name: Schedulers
 
-# 12. Schedulers
+# 13. Schedulers
 <br/>
 <br/>
 <br/>
@@ -2441,7 +2441,7 @@ isTerminated = true
 class: middle, center
 name: ErrorHandling
 
-# 13. Error Handling
+# 14. Error Handling
 <br/>
 <br/>
 <br/>
@@ -2815,7 +2815,7 @@ dematerialized runAsync new Callback[Throwable, Int] {
 class: middle, center
 name: Parallelism
 
-# 14. Parallelism
+# 15. Parallelism
 <br/>
 <br/>
 <br/>
@@ -2828,7 +2828,7 @@ name: Parallelism
 class: middle, center
 name: Races
 
-# 15. Races
+# 16. Races
 <br/>
 <br/>
 <br/>
@@ -2841,7 +2841,7 @@ name: Races
 class: middle, center
 name: TaskApp
 
-# 16. TaskApp
+# 17. TaskApp
 <br/>
 <br/>
 <br/>
@@ -2854,7 +2854,7 @@ name: TaskApp
 class: middle, center
 name: CompletableFuture
 
-# 17. CompletableFuture
+# 18. CompletableFuture
 <br/>
 <br/>
 <br/>
