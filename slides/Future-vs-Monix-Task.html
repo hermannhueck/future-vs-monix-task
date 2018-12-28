@@ -225,8 +225,9 @@ the presentation also gives an introduction to Monix Task.
 1. [Async Boundaries](#AsyncBoundaries)
 1. [Schedulers](#Schedulers)
 1. [Error Handling](#ErrorHandling)
-1. [Parallelism](#Parallelism)
 1. [Races](#Races)
+1. [Delaying a Task](#DelayingTask)
+1. [Parallelism (cats.Parallel)](#Parallelism)
 1. [TaskApp](#TaskApp)
 1. [CompletableFuture](#CompletableFuture)
 1. [Resources](#Resources)
@@ -3510,6 +3511,68 @@ name: TaskApp
 <br/>
 <br/>
 &nbsp;
+
+---
+
+## *TaskApp*
+
+- allows you to create an App where you only define a *Task*
+
+- You define the *Task* inside *TaskApp#run*.
+
+- *TaskApp#run* takes the command line args as a *List[String]* and returns a *Task[ExitCode]*.
+
+- No need to invoke one of the run* methods like *runAsync*, *runToFuture* or *foreach*
+
+- No need to provide an implicit *Scheduler*.
+
+--
+
+```scala
+object MyApp extends TaskApp {
+
+  def run(args: List[String]): Task[ExitCode] =
+  
+    args.headOption match {
+      case Some(name) =>
+        Task(println(s"Hello, $name.")).as(ExitCode.Success)
+      case None =>
+        Task(System.err.println("Usage: MyApp name")).as(ExitCode(2))
+    }
+}
+```
+
+---
+
+## *TaskApp* - Another example
+
+```scala
+object FibonacciApp extends TaskApp {
+
+  def run(args: List[String]): Task[ExitCode] =
+
+    args.headOption match {
+
+      case None =>
+        Task(System.err.println("Usage: MyApp cycles")).as(ExitCode(1))
+
+      case Some(cyclesStr) =>
+        Try(cyclesStr.toInt).toEither match {
+          case Left(t) =>
+            Task(System.err.println("Not a positive number")).as(ExitCode(2))
+          case Right(cycles) =>
+            defineWork(cycles).as(ExitCode.Success)
+        }
+    }
+
+    def defineWork(cycles: Int): Task[Unit] = for {
+      result <- Task { fibonacci(cycles) }
+      _ <- Task(println("\n-----"))
+      _ <- Task(println(s"Fibonacci for $cycles cycles is: $result."))
+      _ <- Task(println("-----\n"))
+    } yield ()
+  }
+```
 
 ---
 
