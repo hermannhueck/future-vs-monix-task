@@ -1,16 +1,18 @@
 package chap16delayingtask
 
 import monix.eval.Task
+import monix.execution.Scheduler
 
+import scala.concurrent.duration._
 import scala.util.Random
 
-object App17bTaskDelayResultBySelector extends App {
+object App04bDelayResultWithSelectorTask extends App {
 
-  println("\n-----")
+  println(s"\n----- Main $currentThread")
 
   val source = Task {
-    println("Side-effect!")
-    Random.nextInt(10)
+    println(s"side effect on $currentThread")
+    Random.nextInt(5)
   }
 
   def selector(x: Int): Task[Unit] =
@@ -21,12 +23,12 @@ object App17bTaskDelayResultBySelector extends App {
       .delayExecution(1.second)
       .delayResultBySelector(x => selector(x))
 
+  implicit val scheduler: Scheduler = Scheduler.global
 
   delayed.runToFuture.foreach { x =>
     println(s"Result: $x (signaled after at least ${x+1} seconds)")
   }
 
-
-  Thread.sleep(11000L)
+  Thread sleep 6000L
   println("-----\n")
 }

@@ -2989,6 +2989,145 @@ name: DelayingTask
 
 ---
 
+## Delaying a *Task* - Overview
+
+- For a *Task* you can delay the execution or the signaling of the result - either for
+  a certain time duration or until another *Task* is complete.
+  
+```scala
+// delays the execution of a Task
+//            for a certain time duration
+val delayed: Task[Int] = task.delayExecution(3.seconds)
+```
+
+```scala
+// delays the execution of a Task
+//            until another Task (the trigger) is complete
+val trigger: Task[Unit] = ???
+val delayed: Task[Int] = trigger.flatMap(_ => source)
+```
+
+```scala
+// delays signaling of a Task's result
+//            for a certain time duration
+val delayed: Task[Int] = task.delayResult(3.seconds)
+```
+
+```scala
+// delays signaling of a Task's result
+//             until another Task (the selector) is complete
+def selector(x: Int): Task[Int] = ???
+val delayed: Task[Int] = task.flatMap(x => selector(x))
+```
+
+---
+
+## *Task#delayExecution*
+<br/>
+
+- delays the execution of a *Task* for a certain time duration.
+
+```scala
+val source = Task {
+  println(s"side effect on $currentThread")
+  "Hello"
+}
+
+val delayed: Task[String] =
+  source
+    .delayExecution(2.seconds)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+delayed.runToFuture foreach println
+```
+
+---
+
+## Delay a *Task* until another *Task* is complete
+<br/>
+
+- delays the execution of a *Task* until another *Task* (the trigger) is complete.
+
+```scala
+val source = Task {
+  println(s"side effect on $currentThread")
+  "Hello"
+}
+
+val delayed: Task[String] =
+  trigger                 // trigger delays execution of source.
+    .flatMap(_ => source)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+delayed.runToFuture foreach println
+```
+
+--
+
+- alternatively with *> (= cats.Apply.productR):
+
+```scala
+import cats.syntax.apply._
+
+val delayed: Task[String] =
+  trigger *> source
+```
+
+---
+
+## *Task#delayResult*
+<br/>
+
+- delays signaling of a *Task*'s result for a certain time duration.
+
+```scala
+val source = Task {
+  println(s"side effect on $currentThread")
+  "Hello"
+}
+
+val delayed: Task[String] =
+  source
+    .delayExecution(2.second)
+    .delayResult(3.seconds)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+delayed.runToFuture foreach println
+```
+
+---
+
+## Delay signaling of a *Task*'s result until another *Task* is complete
+<br/>
+
+- delays signaling of a *Task*'s result until another *Task* (the selector) is complete.
+
+```scala
+val source = Task {
+  println(s"side effect on $currentThread")
+  Random.nextInt(5)
+}
+
+def selector(x: Int): Task[Int] =
+  Task(x).delayExecution(x.seconds)
+
+val delayed: Task[Int] =
+  source
+    .delayExecution(1.second)
+    .flatMap(x => selector(x))    // selector delays result signaling of source.
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+delayed.runToFuture foreach { x =>
+  println(s"Result: $x (signaled after at least ${x+1} seconds)")
+}
+```
+
+---
+
 class: middle, center
 name: Parallelism
 
