@@ -10,12 +10,13 @@ object App04TaskTimeout extends App {
 
   println(s"\n----- Main $currentThread")
 
-  val source = Task(sumOfRange(1, 100))
-    .delayExecution(10.seconds)
+  val source: Task[Int] =
+    Task(sumOfRange(1, 100))
+      .delayExecution(10.seconds)
 
   // Triggers TimeoutException if the source does not
   // complete in 3 seconds after runAsync
-  val timedOut = source.timeout(3.seconds)
+  val timedOut: Task[Int] = source.timeout(3.seconds)
 
   implicit val scheduler: Scheduler = Scheduler.global
 

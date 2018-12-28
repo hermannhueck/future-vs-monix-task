@@ -2451,6 +2451,19 @@ name: ErrorHandling
 
 ---
 
+## Signaling of Errors - Overview
+<br/>
+
+- Errors in *Task*s are signaled in the result of a *Task*.
+  You can react on errors in the callback (in *case Left(ex)* or in *case Failure(ex)*)
+
+- Errors in callbacks are logged to the *UncaughtExceptionReporter* of the *Scheduler*
+  (which prints to stderr by default).
+
+- The *UncaughtExceptionReporter* of the *Scheduler* can be overriden in order to log to a different destination.
+
+---
+
 ## Signaling of *Task* Errors
 <br/>
 
@@ -2526,19 +2539,37 @@ task.runAsync { r => throw new IllegalStateException(r.toString) }
 
 ---
 
+## Timouts - Overview
+<br/>
+
+```scala
+// Triggers TimeoutException if the source does not complete in 3 seconds
+val timedOut: Task[Int] = source.timeout(3.seconds)
+```
+
+```scala
+// Triggers a Fallback Task if the source does not complete in 3 seconds
+source.timeoutTo(
+  3.seconds,
+  Task.raiseError(new TimeoutException("That took too long!")) // Fallback Task
+)
+```
+
+---
+
 ## *Task#timout*
 <br/>
 
 - triggers a *TimoutException* after the specified time.
 
 ```scala
-val source =
+val source: Task[Int] =
   Task(sumOfRange(1, 100))
     .delayExecution(10.seconds)
 
 // Triggers TimeoutException if the source does not
 // complete in 3 seconds after runAsync
-val timedOut = source.timeout(3.seconds)
+val timedOut: Task[Int] = source.timeout(3.seconds)
 
 implicit val scheduler: Scheduler = Scheduler.global
 
@@ -2554,13 +2585,13 @@ timedOut runAsync println
 - falls back to another *Task* after the specified time.
 
 ```scala
-val source =
+val source: Task[Int] =
   Task(sumOfRange(1, 100))
     .delayExecution(10.seconds)
 
 // Triggers TimeoutException if the source does not
 // complete in 3 seconds after runAsync
-val timedOut = source.timeoutTo(
+val timedOut: Task[Int] = source.timeoutTo(
   3.seconds,
   Task.raiseError(new TimeoutException("That took too long!")) // Fallback Task
 )
@@ -2569,6 +2600,52 @@ implicit val scheduler: Scheduler = Scheduler.global
 
 timedOut runAsync println
 //=> Left(java.util.concurrent.TimeoutException: That took too long!)
+```
+
+---
+
+## Error Handlng - Overview (1/2)
+<br/>
+
+```scala
+// handles failure with the specified (lazy) handler Function1
+val f: Function1[Throwable, Task[B]] = ??? // error handler
+task.onErrorHandleWith(f)
+```
+
+```scala
+// handles failure  with the specified (lazy) handler PartialFunction
+val pf: PartialFunction[Throwable, Task[B]] = ??? // error handler
+task.onErrorRecoverWith(pf)
+```
+
+```scala
+// handles failure with the specified (eager) handler Function1
+val f: Function1[Throwable, B] = ??? // error handler
+task.onErrorHandle(f)
+```
+
+```scala
+// handles failure  with the specified (eager) handler PartialFunction
+val pf: PartialFunction[Throwable, B] = ??? // error handler
+task.onErrorRecoverWith(pf)
+```
+
+---
+
+## Error Handlng - Overview (2/2)
+<br/>
+
+```scala
+// in case of failure keeps retrying until maxRetries is reached
+val f: Throwable => Task[B] = ??? // error handler
+task.onErrorRestart(maxRetries = 3)
+```
+
+```scala
+// in case of failure keeps retrying until predicate p becomes true
+val p: Throwable => Boolean = ???
+task.onErrorRestart(f)
 ```
 
 ---
@@ -2764,58 +2841,145 @@ println(Await.result(randomEven.runToFuture, 10.seconds))
 
 ---
 
-## *Task#materialize*
+class: middle, center
+name: Races
+
+# 15. Races
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+## Races - Overview
 <br/>
 
-- converts a *Task[A]* into a *Task[Try[A]]*, thus exposing errors.
+```scala
+// runs 2 Tasks in parallel.
+// the resulting Either allows
+//         to cancel the other Task or to await its completion.
+val raceTask: Task[Either[(Int, Fiber[Int]), (Fiber[Int], Int)]] =
+      Task.racePair(task1, task2)
+```
 
 ```scala
-val source = Task.raiseError[Int](new IllegalStateException)
+// runs 2 Tasks in parallel and automatically cancels the losere Task.
+// the resulting Either gives access to the winner's result.
+val winnerTask: Task[Either[Int, Int]] = Task.race(task1, task2)
+```
 
-val materialized: Task[Try[Int]] = source.materialize
-
-// Now we can flatMap over both success and failure:
-val recovered = materialized.flatMap {
-  case Success(value) => Task.now(value)
-  case Failure(_) => Task.now(0)
-}
-
-implicit val scheduler: Scheduler = Scheduler.global
-
-recovered.runToFuture foreach println
-//=> 0
+```scala
+// runs a Seq[Task[A]] in parallel and automatically cancels the losers.
+// Running it returns the winners result.
+val winnerTask: Task[Int] = Task.raceMany(Seq(task1, task2))
 ```
 
 ---
 
-## *Task#dematerialize*
+## *Fiber*
 <br/>
 
-- converts a *Task[A]* into a *Task[A]*, thus hiding errors.
+- With a *Fiber* you can cancel the other (not yet completed) *Task* or join to it (= wait for it).
+
+<br/>
 
 ```scala
-val source = Task.raiseError[Int](new IllegalStateException)
+trait Fiber[A] extends cats.effect.Fiber[Task, A] {
 
-val materialized: Task[Try[Int]] = source.materialize
+  // triggers the cancellation of the fiber.
+  def cancel: CancelToken[Task]
 
-// Hiding errors again (restores the original Task)
-val dematerialized: Task[Int] = materialized.dematerialize
+  // returns a new task that will await the completion of the underlying fiber.
+  def join: Task[A]
+}
+```
+
+---
+
+## *Task.racePair*
+
+- runs two *Task*s in parallel and returns when the first is complete.
+
+- returns an *Either* containing two tuples each containing a result value and a *Fiber* of the other *Task*.
+
+- If the 1st *Task* completes first the *Either* is a *Left* with the result of the first *Task* and a *Fiber* for the second *Task* (analogous if the *Either* is a *Right*).
+
+```scala
+val random = scala.util.Random
+val task1 = Task(10 + 1).delayExecution(random.nextInt(3) seconds)
+val task2 = Task(20 + 1).delayExecution(random.nextInt(3) seconds)
+
+val raceTask: Task[Either[(Int, Fiber[Int]), (Fiber[Int], Int)]] =
+      Task.racePair(task1, task2)
+
+implicit val scheduler: Scheduler = Scheduler.global
+val raceFuture: CancelableFuture[Either[(Int, Fiber[Int]), (Fiber[Int], Int)]] = raceTask.runToFuture
+
+raceFuture.foreach {
+  case Left((result1, fiber)) =>
+    fiber.cancel
+    println(s"Task 1 succeeded with result: $result1")
+  case Right((fiber, result2)) =>
+    fiber.cancel
+    println(s"Task 2 succeeded with result: $result2")
+}
+```
+
+---
+
+## *Task.race*
+
+- runs two *Task*s in parallel and returns after the first one completes.
+
+- The loser is cancelled automatically.
+
+- The resulting *Either* is a *Left* if the first one completes first, otherwise a *Right*.
+
+```scala
+val random = scala.util.Random
+val task1 = Task(10 + 1).delayExecution(random.nextInt(3) seconds)
+val task2 = Task(20 + 1).delayExecution(random.nextInt(3) seconds)
+
+val winnerTask: Task[Either[Int, Int]] = Task.race(task1, task2)
 
 implicit val scheduler: Scheduler = Scheduler.global
 
-dematerialized runAsync new Callback[Throwable, Int] {
-  def onSuccess(result: Int): Unit = println(s"result = $result")
-  def onError(ex: Throwable): Unit = println(s"ERROR: ${ex.toString}")
-}
-//=> ERROR: java.lang.IllegalStateException
+winnerTask
+  .runToFuture
+  .foreach(result => println(s"Winner's result: $result"))
+```
+
+---
+
+## *Task.raceMany*
+
+- runs a *Seq[Task[A]]* in parallel and returns the first that completes.
+
+- All loosers are cancelled automatically.
+
+```scala
+val random = scala.util.Random
+val task1 = Task(10 + 1).delayExecution(random.nextInt(3) seconds)
+val task2 = Task(20 + 1).delayExecution(random.nextInt(3) seconds)
+
+val winnerTask: Task[Int] = Task.raceMany(Seq(task1, task2))
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+winnerTask
+  .runToFuture
+  .foreach(result => println(s"Winner's result: $result"))
 ```
 
 ---
 
 class: middle, center
-name: Parallelism
+name: DelayingTask
 
-# 15. Parallelism
+# 16. Delaying a *Task*
 <br/>
 <br/>
 <br/>
@@ -2826,9 +2990,9 @@ name: Parallelism
 ---
 
 class: middle, center
-name: Races
+name: Parallelism
 
-# 16. Races
+# 17. Parallelism
 <br/>
 <br/>
 <br/>
@@ -2841,7 +3005,7 @@ name: Races
 class: middle, center
 name: TaskApp
 
-# 17. TaskApp
+# 18. TaskApp
 <br/>
 <br/>
 <br/>
@@ -2854,7 +3018,7 @@ name: TaskApp
 class: middle, center
 name: CompletableFuture
 
-# 18. CompletableFuture
+# 19. CompletableFuture
 <br/>
 <br/>
 <br/>
