@@ -3131,13 +3131,372 @@ delayed.runToFuture foreach { x =>
 class: middle, center
 name: Parallelism
 
-# 17. Parallelism
+# 17. Parallelism (cats.Parallel)
 <br/>
 <br/>
 <br/>
 <br/>
 <br/>
 &nbsp;
+
+---
+
+## The problem with *flatMap*
+
+- The three *Task* operations are independent of each other.
+
+- But *Task#flatMap* (for-comprehension) forces them to be sequential, (as if they were dependent).
+
+--
+
+```scala
+def sumTask(from: Int, to: Int): Task[Int] = Task { sumOfRange(from, to) }
+def factorialTask(n: Int): Task[BigInt] = Task { factorial(n) }
+def fibonacciTask(cycles: Int): Task[BigInt] = Task { fibonacci(cycles) }
+```
+
+```scala
+val aggregate: Task[BigInt] = for {  // sequential operations based on flatMap
+  sum <- sumTask(0, 1000)
+  fac <- factorialTask(10)
+  fib <- fibonacciTask(10)
+} yield sum + fac + fib
+```
+
+```scala
+implicit val scheduler: Scheduler = Scheduler.global
+
+aggregate runAsync printCallback
+
+def printCallback[A]: Callback[Throwable, A] = new Callback[Throwable, A] {
+  def onSuccess(result: A): Unit = println(s"result = $result")
+  def onError(ex: Throwable): Unit = println(s"ERROR: ${ex.toString}")
+}
+```
+
+---
+
+## The problem with *flatMap*
+
+- Composition with *flatMap* (often implicitly in for-comprehensions) enforces sequential, i.e. dependent execution.
+
+- *flatMap* prevents independent / parallel execution.
+
+- Type class *cats.Parallel* allows to switch between sequential (monadic) and parallel (applicative) execution.
+
+```scala
+type ~>[F[_], G[_]] = arrow.FunctionK[F, G]
+
+trait Parallel[M[_], F[_]] {
+
+  // Natural Transformation from the parallel Applicative F[_] to the sequential Monad M[_]
+  def sequential: F ~> M
+
+  // Natural Transformation from the sequential Monad M[_] to the parallel Applicative F[_].
+  def parallel: M ~> F
+}
+```
+
+- Monix *Task* has instance of *cats.Parallel*.
+
+- But it also provides its own (more efficient) impl of *parZip[n]*, *parMap[n]*, *parSequnce*, *parTraverse*.
+
+---
+
+## Replace *flatMap* / for-comprehension ...
+
+--
+
+- with *Task#parZip3* followed by *map*
+
+```scala
+val aggregate: Task[BigInt] =               // potentially executed in parallel
+  Task.parZip3(sumTask(0, 1000), factorialTask(10), fibonacciTask(10)).map {
+    (sum, fac, fib) => sum + fac + fib
+  }
+```
+
+--
+
+- with *Task#parMap3*
+
+```scala
+val aggregate: Task[BigInt] =               // potentially executed in parallel
+  Task.parMap3(sumTask(0, 1000), factorialTask(10), fibonacciTask(10)) {
+    (sum, fac, fib) => sum + fac + fib
+  }
+```
+
+--
+
+- with *parMapN* using *cats.syntax.parallel._*
+
+```scala
+import cats.syntax.parallel._
+
+val aggregate: Task[BigInt] =               // potentially executed in parallel
+  (sumTask(0, 1000), factorialTask(10), fibonacciTask(10)) parMapN {
+    _ + _ + _
+  }
+```
+
+---
+
+## Sequencing - Overview
+
+*Task* provides three variants for sequencing (analogous to *Future.sequence*):
+<br/>
+<br/>
+
+--
+
+- *Task#sequence*
+
+```scala
+// sequentially converts a *Seq[Task[A]]* to *Task[Seq[A]]*
+// the order of side effects is guaranteed as well as the order of results
+val taskOfSeq: Task[Seq[Int]] = Task.sequence(seqOfTask)
+```
+
+--
+
+- *Task#gather*
+
+```scala
+// converts a *Seq[Task[A]]* to *Task[Seq[A]]* in parallel
+// the order of side effects is not guaranteed but the order of results is
+val taskOfSeq: Task[Seq[Int]] = Task.gather(seqOfTask)
+```
+
+--
+
+- *Task#gatherUnordered*
+
+```scala
+// converts a *Seq[Task[A]]* to *Task[Seq[A]]* in parallel
+// the order of side effects is not guaranteed, neither is the order of results
+val taskOfSeq: Task[Seq[Int]] = Task.gatherUnordered(seqOfTask)
+```
+
+---
+
+## *Task#sequence*
+<br/>
+
+- sequentially converts a *Seq[Task[A]]* to *Task[Seq[A]]*.
+
+- The order of side effects is guaranteed as well as the order of results.
+
+```scala
+val task1 = Task { println("side effect 1"); 1 }
+val task2 = Task { println("side effect 2"); 2 }
+val seqOfTask: Seq[Task[Int]] = Seq(task1, task2)
+
+val taskOfSeq: Task[Seq[Int]] = Task.sequence(seqOfTask)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+// We always get the same ordering in the output:
+taskOfSeq foreach println
+//=> side effect 1
+//=> side effect 2
+//=> List(1, 2)
+
+taskOfSeq foreach println
+//=> side effect 1
+//=> side effect 2
+//=> List(1, 2)
+```
+
+---
+
+## *Task#gather*
+<br/>
+
+- converts a *Seq[Task[A]]* to *Task[Seq[A]]* in parallel.
+
+- The order of side effects is not guaranteed but the order of results is.
+
+```scala
+val task1 = Task { println("side effect 1"); 1 }.delayExecution(1 second)
+val task2 = Task { println("side effect 2"); 2 }.delayExecution(1 second)
+val seqOfTask: Seq[Task[Int]] = Seq(task1, task2)
+
+val taskOfSeq: Task[Seq[Int]] = Task.gather(seqOfTask)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+// There’s potential for parallel execution:
+// Ordering of effects is not guaranteed, but the results in the List are ordered.
+taskOfSeq foreach println
+//=> side effect 1
+//=> side effect 2
+//=> List(1, 2)
+
+taskOfSeq foreach println
+//=> side effect 2
+//=> side effect 1
+//=> List(1, 2)
+```
+
+---
+
+## *Task#gatherUnordered*
+<br/>
+
+- converts a *Seq[Task[A]]* to *Task[Seq[A]]* in parallel.
+
+- The order of side effects is not guaranteed, neither is the order of results.
+
+```scala
+val task1 = Task { println("side effect 1"); 1 }.delayExecution(1 second)
+val task2 = Task { println("side effect 2"); 2 }.delayExecution(1 second)
+val seqOfTask: Seq[Task[Int]] = Seq(task1, task2)
+
+val taskOfSeq: Task[Seq[Int]] = Task.gatherUnordered(seqOfTask)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+// There’s potential for parallel execution:
+// Ordering of effects is not guaranteed, results in the List are unordered too.
+taskOfSeq foreach println
+//=> side effect 1
+//=> side effect 2
+//=> List(1, 2)
+
+taskOfSeq foreach println
+//=> side effect 2
+//=> side effect 1
+//=> List(2, 1)
+```
+
+---
+
+## Traversing - Overview
+
+*Task* provides three variants for traversing (analogous to *Future.traverse*):
+<br/>
+<br/>
+
+--
+
+- *Task#traverse*
+
+```scala
+// sequentially traverses a *Seq[A]* with a function A => Task[A] to *Task[Seq[A]]*
+// the order of side effects is guaranteed as well as the order of results
+val taskOfSeq: Task[Seq[Int]] = Task.traverse(Seq(1, 2))(i => task(i))
+```
+
+--
+
+- *Task#wander*
+
+```scala
+// traverses a *Seq[A]* with a function A => Task[A] to *Task[Seq[A]]* in parallel
+// the order of side effects is not guaranteed but the order of results is
+val taskOfSeq: Task[Seq[Int]] = Task.wander(Seq(1, 2))(i => task(i))
+```
+
+--
+
+- *Task#wanderUnordered*
+
+```scala
+// traverses a *Seq[A]* with a function A => Task[A] to *Task[Seq[A]]* in parallel
+// the order of side effects is not guaranteed, neither is the order of results
+val taskOfSeq: Task[Seq[Int]] = Task.wanderUnordered(Seq(1, 2))(i => task(i))
+```
+
+---
+
+## *Task#traverse*
+<br/>
+
+- sequentially traverses a *Seq[A]* with a function A => Task[A] to *Task[Seq[A]]*.
+
+- The order of side effects is guaranteed as well as the order of results.
+
+```scala
+def task(i: Int): Task[Int] = Task { println("side effect  " + i); i }
+
+val taskOfSeq: Task[Seq[Int]] = Task.traverse(Seq(1, 2))(i => task(i))
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+// We always get the same ordering in the output:
+taskOfSeq foreach println
+//=> side effect 1
+//=> side effect 2
+//=> List(1, 2)
+
+taskOfSeq foreach println
+//=> side effect 1
+//=> side effect 2
+//=> List(1, 2)
+```
+
+---
+
+## *Task#wander*
+<br/>
+
+- traverses a *Seq[A]* with a function A => Task[A] to *Task[Seq[A]]* in parallel.
+
+- The order of side effects is not guaranteed but the order of results is.
+
+```scala
+def task(i: Int): Task[Int] =
+      Task { println("side effect  " + i); i }.delayExecution(1 second)
+
+val taskOfSeq: Task[Seq[Int]] = Task.wander(Seq(1, 2))(i => task(i))
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+// There’s potential for parallel execution:
+// Ordering of effects is not guaranteed, but the results in the List are ordered.
+// list.runToFuture.foreach(println)
+taskOfSeq foreach println
+//=> side effect 1
+//=> side effect 2
+//=> List(1, 2)
+
+// list.runToFuture.foreach(println)
+taskOfSeq foreach println
+//=> side effect 2
+//=> side effect 1
+//=> List(1, 2)
+```
+
+---
+
+## *Task#wanderUnordered*
+<br/>
+
+- traverses a *Seq[A]* with a function A => Task[A] to *Task[Seq[A]]* in parallel.
+
+- The order of side effects is not guaranteed, neither is the order of results.
+
+```scala
+def task(i: Int): Task[Int] =
+      Task { println("side effect  " + i); i }.delayExecution(1 second)
+
+val taskOfSeq: Task[Seq[Int]] = Task.wanderUnordered(Seq(1, 2))(i => task(i))
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+// There’s potential for parallel execution:
+// Ordering of effects is not guaranteed, results in the List are unordered too.
+taskOfSeq foreach println
+//=> side effect 1
+//=> side effect 2
+//=> List(1, 2)
+
+taskOfSeq foreach println
+//=> side effect 2
+//=> side effect 1
+//=> List(2, 1)
+```
 
 ---
 
