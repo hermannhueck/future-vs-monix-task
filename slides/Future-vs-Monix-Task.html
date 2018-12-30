@@ -2842,6 +2842,53 @@ println(Await.result(randomEven.runToFuture, 10.seconds))
 
 ---
 
+## Task#restartUntil
+<br/>
+
+- restarts a *Task* until the specified predicate is true.
+
+```scala
+val random = Task.eval(Random.nextInt())
+
+val predicate: Int => Boolean = _ % 2 == 0
+val randomEven = random.restartUntil(predicate)
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+randomEven.runToFuture foreach println
+// prints an even Int number
+```
+
+---
+
+## Task#doOnFinish
+<br/>
+
+- specifies an extra finish callback *Option[Throwable] => Task[Unit]* to be invoked when the *Task* is finished.
+
+```scala
+val task: Task[Int] = Task(1)
+
+val finishCallback: Option[Throwable] => Task[Unit] = {
+  case None =>
+    println("Was success!")
+    Task.unit
+  case Some(ex) =>
+    println(s"Had failure: $ex")
+    Task.unit
+}
+
+val withFinishCallback: Task[Int] = task doOnFinish finishCallback
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+withFinishCallback.runToFuture foreach println
+//=> Was success!
+//=> 1
+```
+
+---
+
 class: middle, center
 name: Races
 
@@ -3589,6 +3636,93 @@ name: CompletableFuture
 
 ---
 
+## *FutureUtils*
+<br/>
+
+- is an object with utility functions for *scala.concurrent.Future*.
+
+- Provides (amongst other things) interop with Java's *CompletableFuture*
+
+- *fromJavaCompletable* converts a *CompletableFuture* to a Scala *Future*.
+
+- *toJavaCompletable* converts a Scala *Future* to a *CompletableFuture*.
+
+---
+
+## *FutureUtils.fromJavaCompletable*
+<br/>
+
+- converts a *CompletableFuture* to a *scala.concurrent.Future*
+
+```scala
+implicit val ec: ExecutionContextExecutor = ExecutionContext.global
+
+val supplier: Supplier[BigInt] = () => fibonacci(6)
+
+def completable: CompletableFuture[BigInt] =
+      CompletableFuture.supplyAsync(supplier)
+
+val future: Future[BigInt] = FutureUtils.fromJavaCompletable(completable)
+
+future foreach println
+```
+
+---
+
+## Converting *CompletableFuture* to *Task*
+<br/>
+
+```scala
+def completable: CompletableFuture[BigInt] =
+      CompletableFuture.supplyAsync(() => fibonacci(6))
+
+def future: Future[BigInt] = FutureUtils.fromJavaCompletable(completable)
+
+val task = Task.deferFutureAction { implicit scheduler => future }
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+task foreach println
+```
+
+---
+
+## *FutureUtils.toJavaCompletable*
+<br/>
+
+- converts a *scala.concurrent.Future* to a *CompletableFuture*
+
+```scala
+implicit val ec: ExecutionContext = ExecutionContext.global
+
+val future: Future[BigInt] = Future { fibonacci(6) }
+
+val completable: CompletableFuture[BigInt] = FutureUtils.toJavaCompletable(future)
+
+val consumer: Consumer[BigInt] = new Consumer[BigInt] {
+  override def accept(value: BigInt): Unit = println(value)
+}
+completable.thenAccept(consumer)
+```
+
+---
+
+## Converting *Task* to *CompletableFuture*
+<br/>
+
+```scala
+val task: Task[BigInt] = Task { fibonacci(6) }
+
+implicit val scheduler: Scheduler = Scheduler.global
+
+val completable: CompletableFuture[BigInt] =
+      FutureUtils.toJavaCompletable(task.runToFuture)
+
+completable.thenAccept((value: BigInt) => println(value))
+```
+
+---
+
 class: middle, center
 name: Resources
 
@@ -3619,6 +3753,10 @@ name: Resources
   Talk by Alexandru Nedelcu at Scala Days 2017<br/>
   https://www.youtube.com/watch?v=wi97X8_JQUk
 
+- Converting Scala's Future to Task<br/>
+  Video Tutorial by Alexandru Nedelcu<br/>
+  https://monix.io/blog/2018/11/08/tutorial-future-to-task.html
+
 - Presentations on Monix:<br/>
   https://monix.io/presentations
 
@@ -3633,6 +3771,9 @@ name: Resources
 
 - Daniels Spiewak's gist on Thread Pools<br/>
   https://gist.github.com/djspiewak/46b543800958cf61af6efa8e072bfd5c
+
+- Daniels Spiewak's blog: An IO monad for cats<br/>
+  https://typelevel.org/blog/2017/05/02/io-monad-for-cats.html
 
 - Discussion about Green Threads and blocking I/O<br/>
   https://github.com/typelevel/cats-effect/issues/243
