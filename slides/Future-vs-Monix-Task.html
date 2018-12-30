@@ -209,7 +209,7 @@ the presentation also gives an introduction to Monix Task.
 
 ---
 
-# Agenda
+## Agenda
 
 1. [Referential Transparency](#ReferentialTransparency)
 1. [The IO Monad](#IOMonad)
@@ -230,6 +230,7 @@ the presentation also gives an introduction to Monix Task.
 1. [Parallelism (cats.Parallel)](#Parallelism)
 1. [TaskApp](#TaskApp)
 1. [CompletableFuture](#CompletableFuture)
+1. [Resource Management](#ResourceManagement)
 1. [Resources](#Resources)
 
 ---
@@ -3724,6 +3725,135 @@ completable.thenAccept((value: BigInt) => println(value))
 ---
 
 class: middle, center
+name: ResourceManagement
+
+# 20. Resources Management
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+&nbsp;
+
+---
+
+## Line count example with classic Java File IO
+<br/>
+
+```scala
+def doCountLines(in: BufferedReader): Int = {
+  var count: Int = 0
+  var line: String = in.readLine()
+  while (line != null) {
+    count += 1
+    line = in.readLine()
+  }
+  count
+}
+
+def countLines(file: File): Task[Int] = Task {
+  val in = new BufferedReader(new FileReader(file))
+  try {
+    doCountLines(in)
+  } finally {
+    in.close()
+  }
+}
+
+val task: Task[Int] = countLines(new File("README.md"))
+
+implicit val scheduler: Scheduler = Scheduler.global
+task foreach println
+```
+
+---
+
+## *Task#bracket*
+<br/>
+
+- can separate resource acquisition, it's usage and it's release
+
+```scala
+def doCountLines(in: BufferedReader): Int = ???     // as before
+
+def countLines(file: File): Task[Int] = {
+
+  val acquire: Task[BufferedReader] = Task {
+    new BufferedReader(new FileReader(file))
+  }
+
+  acquire.bracket { in =>
+    Task { doCountLines(in) }
+  } { in =>
+    Task { in.close() }
+  }
+}
+
+val task: Task[Int] = countLines(new File("README.md"))
+
+implicit val scheduler: Scheduler = Scheduler.global
+task foreach println
+```
+
+---
+
+## *cats.effect.Resource*
+<br/>
+
+- *Resource.make* implements resource acquisition and release
+
+- provides a method *use* that take a function for resource usage
+
+```scala
+def doCountLines(in: BufferedReader): Int = ???     // as before
+
+def openFile(file: File): Resource[Task, BufferedReader] =
+  Resource.make(
+    Task(new BufferedReader(new FileReader(file)))
+  )( in =>
+    Task(in.close())
+  )
+
+def countLines(file: File): Task[Int] =
+  openFile(file).use { in =>
+    Task { doCountLines(in) }
+  }
+
+val task: Task[Int] = countLines(new File("README.md"))
+
+implicit val scheduler: Scheduler = Scheduler.global
+task foreach println
+```
+
+---
+
+## *Resource.fromAutoCloseable*
+<br/>
+
+- simplifies *Resource.make* by omitting the release function
+
+```scala
+def doCountLines(in: BufferedReader): Int = ???     // as before
+
+def openFile(file: File): Resource[Task, BufferedReader] =
+  Resource.fromAutoCloseable(
+    Task(new BufferedReader(new FileReader(file)))
+  )
+
+def countLines(file: File): Task[Int] =
+  openFile(file).use { in =>
+    Task { doCountLines(in) }
+  }
+
+val task: Task[Int] = countLines(new File("README.md"))
+
+implicit val scheduler: Scheduler = Scheduler.global
+task foreach println
+```
+
+---
+
+class: middle, center
 name: Resources
 
 # 20. Resources
@@ -3736,9 +3866,7 @@ name: Resources
 
 ---
 
-## Resources (1/3)
-
-<br/>
+## Resources (1/2)
 
 - Code and Slides of this Talk:<br/>
   https://github.com/hermannhueck/future-vs-monix-task
@@ -3762,9 +3890,7 @@ name: Resources
 
 ---
 
-## Resources (2/3)
-
-<br/>
+## Resources (2/2)
 
 - "Concurrency Basics" in cats-effect<br/>
   https://typelevel.org/cats-effect/concurrency/basics.html
@@ -3780,12 +3906,6 @@ name: Resources
 
 - Best Practice: "Should Not Block Threads"<br/>
   https://monix.io/docs/3x/best-practices/blocking.html
-
----
-
-## Resources (3/3)
-
-<br/>
 
 - What Referential Transparency can do for you<br/>
   Talk by Luka Jacobowitz at ScalaIO 2017<br/>
