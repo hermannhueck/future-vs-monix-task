@@ -6,11 +6,14 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 /*
-  Step 8 refactors IO#runOnComplete and IO#runAsync:
-  - private helper method IO#runAsync0 takes an EC and an Either based callback
-    IO#runAsync and IO#runOnComplete are implemented in terms of IO#runAsync0.
+  In step 8 I added three async run* methods: runToFuture, runOnComplete, runAsync.
+  All three accept an implicit ExecutionContext.
+
+  'runToFuture' runs 'run' in a Future and returns it.
+  'runOnComplete' takes a Try based callback and invokes a Runnable with 'runToTry' in the ExecutionContext.
+  'runAsync' takes a Either based callback and invokes a Runnable with 'runToEither' in the ExecutionContext.
  */
-object IOApp08 extends App {
+object IOApp08RunAsync extends App {
 
   case class IO[A](run: () => A) {
 
@@ -32,17 +35,19 @@ object IOApp08 extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
-    // convert Try based callback into an Either based callback
-      runAsync0(ec, (ea: Either[Throwable, A]) => callback(ea.toTry))
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
+      ec.execute(new Runnable {
+        override def run(): Unit = callback(runToTry)
+      })
+    }
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
-      runAsync0(ec, callback)
-
-    private def runAsync0(ec: ExecutionContext, callback: Either[Throwable, A] => Unit): Unit =
-      ec.execute(() => callback(runToEither))
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
+      ec.execute(new Runnable {
+        override def run(): Unit = callback(runToEither)
+      })
+    }
   }
 
   object IO {

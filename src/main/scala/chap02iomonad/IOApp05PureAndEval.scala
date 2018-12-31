@@ -8,9 +8,9 @@ package chap02iomonad
   'eval is lazy.
 
   This allows us to simplify the for-comprehension in our program a bit.
-  We no longer need to specify functions in order to create instances of IO:
+  We no longer need to specify functions in order to create instances of IO.
  */
-object IOApp05 extends App {
+object IOApp05PureAndEval extends App {
 
   case class IO[A](run: () => A) {
 

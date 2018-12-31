@@ -5,14 +5,14 @@ import chap02iomonad.auth._
 import scala.util.Try
 
 /*
-  Before adding asynchronous run* methods in step 7 I used another example program.
+  Before adding asynchronous run* methods in step 8 I use another example program.
   The previous interactive program is not very suitable to demonstrate asynchrony.
 
   The 'authenticate' method accesses the files 'users.txt' and 'passwords.txt'
   to check a username and a password and returns true if the specified username
   exists in 'users.txt' and the specified password matches with the user's passord in 'passwords.txt'.
  */
-object IOApp06b extends App {
+object IOApp07AuthenticateMaggie extends App {
 
   // IO[A] wraps a Function0[A].
   // With map, flatMap and pure it is a Monad usable in a for-comprehension

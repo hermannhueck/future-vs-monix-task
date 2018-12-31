@@ -5,7 +5,7 @@ package chap02iomonad
   This allows us to compose small IO instances to a bigger program.
   Composition can easily be done in a for-comprehension.
  */
-object IOApp04 extends App {
+object IOApp04MapAndFlatMap extends App {
 
   case class IO[A](run: () => A) {
 

@@ -4,9 +4,10 @@ import scala.util.Try
 
 /*
   The original IO#run() might thow an exception when run.
-  In step 6a I added two additional synchronous run* methods which do not throw an exception: 'runToTry' and 'runToEither'.
+  In step 6 I added two additional synchronous run* methods which do not throw an exception:
+  'runToTry' and 'runToEither'.
  */
-object IOApp06a extends App {
+object IOApp06RunSync extends App {
 
   // IO[A] wraps a Function0[A].
   // With map, flatMap and pure it is a Monad usable in a for-comprehension
