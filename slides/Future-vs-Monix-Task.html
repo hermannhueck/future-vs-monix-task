@@ -184,35 +184,39 @@ class: center
 
 <br/>
 <br/>
-## &copy; 2018 Hermann Hueck
+## &copy; 2019 Hermann Hueck
 <br/>
 https://github.com/hermannhueck/future-vs-monix-task
 
 ---
 
 # Abstract
-<br/>
 
-scala.concurrent.Future is familiar to most Scala devs.
+*scala.concurrent.Future* is familiar to most Scala devs.
 
 This presentation first talks about referential transparency and the IO Monad.
 
 Then it compares Future with monix.eval.Task (Monix 3.x)
 with their Pros and Cons.
 
-As Scala's *Future* is used in many ennvironments and libraries, we look at
-how *Future* can be converted to *Task* and - vice versa - how *Task* to *Future*.
+Interop with *Future*: As Scala's *Future* is used in many environments and libraries, we look at
+the conversion from *Future* to *Task* and - vice versa - from *Task* to *Future*.
 
-Often recurring on the valuable Monix *Task* doumentation at<br/>
-https://monix.io/docs/3x/eval/task.html<br/>
-the presentation also gives an introduction to Monix Task.
+I will also take a look at *Task* evaluation, cancelation and memoization as well as tail recursive loops
+and asynchronous boundaries.
+
+The presentation will include a discussion on *ExecutionContext* (required for *Future*) and *Scheduler*
+(required *Task*, but only to run it)
+
+Often recurring on the valuable Monix *Task* doumentation at https://monix.io/docs/3x/eval/task.html
+the presentation can also be seen as an introduction to Monix *Task*.
 
 ---
 
 ## Agenda
 
 1. [Referential Transparency](#ReferentialTransparency)
-1. [The IO Monad](#IOMonad)
+1. [IO Monad](#IOMonad)
 1. [Is Future referentially transparent?](#FutureReferentiallyTransparent)
 1. [What is Monix Task?](#WhatIsMonixTask)
 1. [Task Evaluation](#TaskEvaluation)
@@ -284,7 +288,7 @@ https://www.youtube.com/watch?v=X-cEGEJMx_4
 class: middle, center
 name: IOMonad
 
-# 2. The IO Monad
+# 2. IO Monad<br/>(My Implementation)
 <br/>
 <br/>
 <br/>
@@ -298,52 +302,65 @@ name: IOMonad
 <br/>
 
 ```scala
+// program is a 'def'
 def program(): Unit = {
   print("Welcome to Scala!  What's your name?   ")
   val name = scala.io.StdIn.readLine
   println(s"Well hello, $name!")
 }
+```
 
-program()
+--
+
+```scala
+program()       // run program
 ```
 <br/>
 
-- Whenever a method or a function returns *Unit* it is <u>***impure***.</u><br/>
-It's intension is to produce a side effect.
+- Whenever a method or a function returns *Unit* it is <u>***impure***</u> (or it is a noop).
+  It's intension is to produce a side effect.
 
 - A <u>***pure***</u> function always returns a value of some type<br/>
   (and doesn't produce a side effect inside).
 
 ---
 
-## IO Program (based on *Function0[A]*)<br/><u>without</u> side effects
+## IO Program <u>without</u> side effects (*Function0[A]*)
 <br/>
 
 ```scala
+// program is a 'val'
 val program: () => Unit =  // () => Unit  is syntactic sugar for:  Function0[Unit]
   () => {
     print("Welcome to Scala!  What's your name?   ")
     val name = scala.io.StdIn.readLine
     println(s"Well hello, $name!")
   }
+```
 
+--
+
+```scala
 program()    // producing the side effects "at the end of the world"
 ```
 <br/>
 
-- A function returning *Unit*
+- A function returning *Unit*: *Function0[Unit]*
 
 - Free of side effects in it's definition
 
-- Produces side effects only when run
+- Produces side effects only when run (at the end of the world)
 
 ---
 
-## IO Program (based on *IO[A]*)<br/>without side effects
+## IO Program <u>without</u> side effects (case class)
+<br/>
 
 ```scala
 case class IO[A](run: () => A)
 ```
+
+--
 
 ```scala
 val program: IO[Unit] = IO {
@@ -353,16 +370,22 @@ val program: IO[Unit] = IO {
     println(s"Well hello, $name!")
   }
 }
+```
 
+--
+
+```scala
 program.run()    // producing the side effects "at the end of the world"
 ```
 <br/>
 
 - *IO[A]* wraps a *Function0[A]* in a case class.
 
+- This is useful to implement further extensions on that case class.
+
 ---
 
-## Monadic IO Program without side effects
+## Monadic IO Program
 
 ```scala
 case class IO[A](run: () => A) {
@@ -371,24 +394,31 @@ case class IO[A](run: () => A) {
 }
 ```
 
+--
+
 ```scala
 val program: IO[Unit] = for {
   _       <- IO { () => print(s"Welcome to Scala!  What's your name?   ") }
   name    <- IO { () => scala.io.StdIn.readLine }
   _       <- IO { () => println(s"Well hello, $name!") }
 } yield ()
+```
 
+--
+
+```scala
 program.run()    // producing the side effects "at the end of the world"
 ```
-<br>
 
-- With *map* and *flatMap* *IO[A]* is monadic
+- With *map* and *flatMap* *IO[A]* is monadic (but it is not yet a Monad).
 
-- Ready for for-comprehensions.
+- *IO* is ready for for-comprehensions.
+
+- This allows the composition of programs from smaller components.
 
 ---
 
-## Monadic IO Program without side effects
+## *IO.pure* and *IO.eval*
 
 ```scala
 case class IO[A](run: () => A) {
@@ -402,10 +432,9 @@ object IO {
 }
 ```
 
+--
+
 ```scala
-// Program definition WITHOUT side effects. This program does nothing.
-// It is just a bunch of monadically composed functions which do not execute.
-//
 val program: IO[Unit] = for {
   welcome <- IO.pure("Welcome to Scala!")
   _       <- IO.eval { print(s"$welcome  What's your name?   ") }
@@ -416,11 +445,13 @@ val program: IO[Unit] = for {
 program.run()    // producing the side effects "at the end of the world"
 ```
 
-- *pure* and *eval* simplify the for-comprehension.
+- *IO.pure* is for pure values.
+
+- *IO.eval* simplifies the creation of *IO* instances (*Function0* no longer visible).
 
 ---
 
-## Defining other sync run* methods
+## Synchronous run* methods
 
 ```scala
 case class IO[A](run: () => A) {
@@ -436,6 +467,8 @@ case class IO[A](run: () => A) {
 }
 ```
 
+--
+
 ```scala
 // running the program synchronously ...
 
@@ -446,16 +479,20 @@ val v2: Try[Unit] = program.runToTry
 val v3: Either[Throwable, Unit] = program.runToEither
 ```
 
+- *IO#run* may throw an exception.
+
+- *runToTry* and *runToEither* avoid exceptions.
+
 ---
 
-## Defining async run* methods
+## Asynchronous run* methods
 
 ```scala
 case class IO[A](run: () => A) {
   // ...
   // ----- impure async run* methods
 
-  // returns a Future that runs the task eagerly on another thread
+  // returns a Future that runs the IO eagerly on another thread
   def runToFuture(implicit ec: ExecutionContext): Future[A] =
     Future { run() }
 
@@ -507,6 +544,78 @@ checkMaggie runOnComplete tryCallback
 checkMaggie runAsync eitherCallback
 //=> true
 ```
+
+---
+
+## *IO* as a Monad
+<br/>
+
+```scala
+case class IO[A](run: () => A) {
+
+  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
+  def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
+
+  // ...
+}
+
+object IO {
+
+  def pure[A](a: A): IO[A] = IO { () => a }
+  def eval[A](a: => A): IO[A] = IO { () => a }
+
+  // ...
+
+  // Monad instance defined in implicit context
+  implicit def ioMonad: Monad[IO] = new Monad[IO] {
+    override def pure[A](value: A): IO[A] = IO.pure(value)
+    override def flatMap[A, B](fa: IO[A])(f: A => IO[B]): IO[B] = fa flatMap f
+    override def tailRecM[A, B](a: A)(f: A => IO[Either[A, B]]): IO[B] = ???
+  }
+}
+```
+
+---
+
+## Usage of the *IO* Monad
+<br/>
+
+```scala
+import cats.syntax.flatMap._
+import cats.syntax.functor._
+
+def sumF[F[_]: Monad](from: Int, to: Int): F[Int] =
+  Monad[F].pure { sumOfRange(from, to) }
+
+def fibonacciF[F[_]: Monad](num: Int): F[BigInt] =
+  Monad[F].pure { fibonacci(num) }
+
+def factorialF[F[_]: Monad](num: Int): F[BigInt] =
+  Monad[F].pure { factorial(num) }
+
+def computeF[F[_]: Monad](from: Int, to: Int): F[BigInt] =
+  for {
+    x <- sumF(from, to)
+    y <- fibonacciF(x)
+    z <- factorialF(y.intValue)
+  } yield z
+
+val io: IO[BigInt] = computeF[IO](1, 4)
+
+implicit val ec: ExecutionContext = ExecutionContext.global
+io.runToFuture foreach { result => println(s"result = $result") }
+//=> result = 6227020800
+```
+
+---
+
+class: middle, center, large-font
+
+My extended implementation of the IO Monad
+
+can be found here:
+
+https://github.com/hermannhueck/implementing-io-monad
 
 ---
 
@@ -620,22 +729,32 @@ name: WhatIsMonixTask
 ---
 
 ## Monix 3.x
+<br/>
 
 - library for asynchronous, reactive computations in Scala
 
+- available for ghe JVM and ScalaJS
+
 - dependent on: [*cats*](https://typelevel.org/cats/) and [*cats-effect*](https://typelevel.org/cats-effect/)
 
-### Monix provides in different sub-projects/packages:
+- Web site: https://monix.io
 
-- *monix.execution.<u>**Scheduler**</u>*: which extends *scala.concurrrent.ExecutionContext*
+---
 
-- *monix.eval.<u>**Task**</u>*: an abstaction for possibly asynchronously evaluated effects
+## Monix 3.x abstractions:
+<br/>
+
+- *monix.execution.<u>**Scheduler**</u>*: Scheduler that extends *scala.concurrrent.ExecutionContext*
+
+- *monix.eval.<u>**Task**</u>*: an abstaction for asynchronous effects
 
 - *monix.eval.<u>**Coeval**</u>*: an abstaction for synchronous effects
 
-- *monix.reactive.{<u>**Observable**</u>, Observer, Subscriber, Consumer}*: a push-based streaming library (compatible with the *reactivestreams.org* spec)
+- *monix.reactive.**Observable**</u>*: a push-based streaming library<br/>
+  (compatible with the *reactivestreams.org* spec)
 
-- *monix.tail.<u>**Iterant**</u>*: a pull-based streaming library (compatible with the *reactivestreams.org* spec)
+- *monix.tail.<u>**Iterant**</u>*: a pull-based streaming library<br/>
+  (compatible with the *reactivestreams.org* spec)
 
 ---
 
@@ -652,11 +771,13 @@ name: WhatIsMonixTask
 
 - *Task* is a function (a wrapped *Function0[A]*).
   It is just a description of a (possibly asynchronous) computation.
-  It doen't run unless explicitly told to do so.
+  It doesn't run unless explicitly told to do so.
 
 - good interop with *Future*: easy to turn *Future* to *Task* or *Task* to *Future*
 
 ---
+
+class: tiny-font
 
 ## Comparison of Features
 
@@ -699,7 +820,7 @@ name: TaskEvaluation
 <table>
     <tr> <th></th><th><u>Eager</u></th><th><u>Lazy</u></th> </tr>
     <tr> <td>Synchronous</td><td>A</td><td>() => A</td> </tr>
-    <tr> <td></td><td></td><td>Eval[A]</td> </tr>
+    <tr> <td></td><td></td><td>Eval[A], Coeval[A]</td> </tr>
     <tr> <td>Asynchronous</td><td>(A => Unit) => Unit</td><td>() => (A => Unit) => Unit</td> </tr>
     <tr> <td></td><td>Future[A]</td><td>Task[A], IO[A]</td> </tr>
 </table>
@@ -751,7 +872,7 @@ implicit val scheduler: Scheduler = Scheduler.global
 
 ---
 
-## Running a *Task*
+## Running *Future* and *Task*
 
 --
 
@@ -896,7 +1017,7 @@ implicit val scheduler: Scheduler = Scheduler.global
 task foreach { result => println(s"result = $result") }
 
 // prints computed value in case of success
-// prints nothing value in case of error
+// prints nothing in case of error
 ```
 
 - Use *foreach* only if the *Task* is guaranteed not to throw an *Exception*.
@@ -2179,12 +2300,35 @@ name: Schedulers
 
 ---
 
+## *ExecutionContext* - Downsides
+<br/>
+
+*ExecutionContext* is limited because ...
+
+- It cannot execute things with a given delay.
+
+- It cannot execute units of work periodically (e.g. once every second).
+
+- The execute() method doesn’t return a token you could use to cancel the pending execution of a task.
+
+<br/>
+
+*ExecutionContext* is **shared mutable state** ... and *Scheduler* is too.
+
+But there is a big difference:
+
+- A *Scheduler* is only needed when running a *Task* (at the end of the world).
+  Whereas an *ExecutionContext* is already required when you create a *Future*
+  and again for nearly every method of *Future* like *map*, *flatMap* and *onComplete*.
+
+---
+
 ## Scheduler
 <br/>
 
 - *Scheduler* is a subclass of *ExecutionContext*, hence it also serves as enhanced *ExecutionContext* for *Future*.
 
-- It is also a replacement for Java’s *ScheduledExecutorService*.
+- It is also a replacement for Java’s *ScheduledExecutorService* (due to it's scheduling and cancelation capabilities).
 
 - *Future* requires an *ExecutionContext* for almost every method (*apply*, *map*, *flatMap*, *onComplete*, etc.) whereas ...
 
@@ -2298,6 +2442,7 @@ trait UncaughtExceptionReporter extends Serializable {
 
 ```scala
 val myReporter = UncaughtExceptionReporter(ex => log.error(ex))
+implicit lazy val myScheduler = Scheduler(ExecutionContext.global, myReporter)
 ```
 
 ---
@@ -2938,7 +3083,7 @@ val winnerTask: Task[Int] = Task.raceMany(Seq(task1, task2))
 ```scala
 trait Fiber[A] extends cats.effect.Fiber[Task, A] {
 
-  // triggers the cancellation of the fiber.
+  // triggers the cancelation of the fiber.
   def cancel: CancelToken[Task]
 
   // returns a new task that will await the completion of the underlying fiber.
@@ -3856,7 +4001,7 @@ task foreach println
 class: middle, center
 name: Resources
 
-# 20. Resources
+# 21. Resources
 <br/>
 <br/>
 <br/>
@@ -3870,6 +4015,9 @@ name: Resources
 
 - Code and Slides of this Talk:<br/>
   https://github.com/hermannhueck/future-vs-monix-task
+
+- Code and Slides for my own Implementation of IO Monad:<br/>
+  https://github.com/hermannhueck/implementing-io-monad
 
 - Monix 3.x Documentation<br/>
   https://monix.io/docs/3x/
