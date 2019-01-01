@@ -275,7 +275,7 @@ https://en.wikipedia.org/wiki/Referential_transparency
 - Testing is easier
 - Separate pure code from impure code
 - Potential compiler optimizations (more in Haskell than in Scala)<br/>
-  (e.g. memoization, parallelization, compute expressions at compile time)
+  (e.g. memoization, parallelisation, compute expressions at compile time)
 
 .footnote[
 "What Referential Transparency can do for you"<br/>
@@ -486,6 +486,7 @@ val v3: Either[Throwable, Unit] = program.runToEither
 ---
 
 ## Asynchronous run* methods
+<br/>
 
 ```scala
 case class IO[A](run: () => A) {
@@ -499,20 +500,18 @@ case class IO[A](run: () => A) {
   // runs the IO in a Runnable on the given ExecutionContext
   // and then executes the specified Try based callback
   def runOnComplete(callback: Try[A] => Unit)
-                                  (implicit ec: ExecutionContext): Unit = {
+                                  (implicit ec: ExecutionContext): Unit =
     ec.execute(new Runnable {
       override def run(): Unit = callback(runToTry)
     })
-  }
 
   // runs the IO in a Runnable on the given ExecutionContext
   // and then executes the specified Either based callback
   def runAsync(callback: Either[Throwable, A] => Unit)
-                                  (implicit ec: ExecutionContext): Unit = {
+                                  (implicit ec: ExecutionContext): Unit =
     ec.execute(new Runnable {
       override def run(): Unit = callback(runToEither)
     })
-  }
 }
 ```
 

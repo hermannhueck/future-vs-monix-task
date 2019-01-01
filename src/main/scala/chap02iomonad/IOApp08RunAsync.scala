@@ -35,19 +35,17 @@ object IOApp08RunAsync extends App {
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit = {
+    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
       ec.execute(new Runnable {
         override def run(): Unit = callback(runToTry)
       })
-    }
 
     // runs the IO in a Runnable on the given ExecutionContext
     // and then executes the specified Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit = {
+    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
       ec.execute(new Runnable {
         override def run(): Unit = callback(runToEither)
       })
-    }
   }
 
   object IO {

@@ -51,6 +51,7 @@ object IOApp09MonadInstance extends App {
     def pure[A](a: A): IO[A] = IO { () => a }
     def eval[A](a: => A): IO[A] = IO { () => a }
 
+    // Monad instance defined in implicit context
     implicit def ioMonad: Monad[IO] = new Monad[IO] {
       override def pure[A](value: A): IO[A] = IO.pure(value)
       override def flatMap[A, B](fa: IO[A])(f: A => IO[B]): IO[B] = fa flatMap f

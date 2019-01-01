@@ -22,6 +22,9 @@ object MonixTaskIsRT extends App {
     } yield (x, y)
   }
 
+  task1.runToFuture onComplete println     // Success((1,2))
+
+
   // same as future1, but inlined
   val task2: Task[(Int, Int)] = {
     val atomicInt = new AtomicInteger(0)
@@ -31,8 +34,7 @@ object MonixTaskIsRT extends App {
     } yield (x, y)
   }
 
-  task1 runAsync println     // Success((1,2))
-  task2 runAsync println     // Success((1,2))    <-- same result
+  task2.runToFuture onComplete println     // Success((1,2))    <-- same result
 
   Thread.sleep(200L)
   println("-----")
