@@ -14,8 +14,11 @@ object IOApp05PureAndEval extends App {
 
   case class IO[A](run: () => A) {
 
-    def map[B](f: A => B): IO[B] = IO { () => f(run()) }
+    import IO._
+
     def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
+    def map[B](f: A => B): IO[B] = flatMap(a => pure(f(a)))
+    def flatten[B](implicit ev: A <:< IO[B]): IO[B] = flatMap(a => a)
   }
 
   object IO {
@@ -25,9 +28,6 @@ object IOApp05PureAndEval extends App {
 
   println("\n-----")
 
-  // Program definition WITHOUT side effects. This program does nothing.
-  // It is just a bunch of monadically composed functions which do not execute.
-  //
   val program: IO[Unit] = for {
     welcome <- IO.pure("Welcome to Scala!")
     _       <- IO.eval { print(s"$welcome  What's your name?   ") }

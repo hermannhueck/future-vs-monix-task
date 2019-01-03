@@ -1,7 +1,7 @@
 package chap02iomonad
 
 /*
-  In step 4 we add map and flatMap to the IO case class.
+  In step 4 we add map and flatMap and flatten to the IO case class.
   This allows us to compose small IO instances to a bigger program.
   Composition can easily be done in a for-comprehension.
  */
@@ -9,9 +9,9 @@ object IOApp04MapAndFlatMap extends App {
 
   case class IO[A](run: () => A) {
 
-    def map[B](f: A => B): IO[B] = IO { () => f(run()) }
-
     def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
+    def map[B](f: A => B): IO[B] = IO { () => f(run()) }
+    def flatten[B](implicit ev: A <:< IO[B]): IO[B] = flatMap(a => a)
   }
 
   println("\n-----")

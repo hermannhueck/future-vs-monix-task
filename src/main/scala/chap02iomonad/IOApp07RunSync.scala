@@ -1,16 +1,16 @@
 package chap02iomonad
 
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
 import cats.Monad
 
 import scala.language.higherKinds
+import scala.util.Try
 
 /*
-  In step 8 I added three async run* methods: runToFuture, runOnComplete, runAsync.
-  All three accept an implicit ExecutionContext.
+  The original IO#run() might throw an exception when run.
+  In step 7 I added two additional synchronous run* methods which do not throw an exception:
+  'runToTry' and 'runToEither'.
  */
-object IOApp08RunAsync extends App {
+object IOApp07RunSync extends App {
 
   case class IO[A](run: () => A) {
 
@@ -27,19 +27,6 @@ object IOApp08RunAsync extends App {
 
     // runs on the current Thread returning Either[Throwable, A]
     def runToEither: Either[Throwable, A] = runToTry.toEither
-
-    // ----- impure async run* methods
-
-    // returns a Future that runs the task eagerly on another thread
-    def runToFuture(implicit ec: ExecutionContext): Future[A] = Future { run() }
-
-    // takes a Try based callback
-    def runOnComplete(callback: Try[A] => Unit)(implicit ec: ExecutionContext): Unit =
-      runToFuture onComplete callback
-
-    // takes a Either based callback
-    def runAsync(callback: Either[Throwable, A] => Unit)(implicit ec: ExecutionContext): Unit =
-      runOnComplete(tryy => callback(tryy.toEither))
   }
 
   object IO {
@@ -94,20 +81,6 @@ object IOApp08RunAsync extends App {
   val either: Either[Throwable, BigInt] = io.runToEither
   println(either)
 
-  Thread sleep 500L
-
-  implicit val ec: ExecutionContext = ExecutionContext.global
-
-  println("\n>>> IO#runToFuture:")
-  io.runToFuture onComplete println
-  Thread sleep 500L
-
-  println("\n>>> IO#runOnComplete:")
-  io runOnComplete println
-  Thread sleep 500L
-
-  println("\n>>> IO#runAsync:")
-  io runAsync println
   Thread sleep 500L
 
   println("-----\n")

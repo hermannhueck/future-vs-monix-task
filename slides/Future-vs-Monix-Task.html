@@ -194,19 +194,19 @@ https://github.com/hermannhueck/future-vs-monix-task
 
 *scala.concurrent.Future* is familiar to most Scala devs.
 
-This presentation first talks about referential transparency and the IO Monad.
+This presentation first talks about referential transparency and the IO Monad in general.
+(Monix *Task* is an impl of the IO Monad.)
 
-Then it compares Future with monix.eval.Task (Monix 3.x)
-with their Pros and Cons.
+Then it compares *Future* Monix 3.x *Task* with their Pros and Cons.
 
 Interop with *Future*: As Scala's *Future* is used in many environments and libraries, we look at
-the conversion from *Future* to *Task* and - vice versa - from *Task* to *Future*.
+the conversion from *Task* to *Future* and - vice versa - from *Future* to *Task*.
 
 I will also take a look at *Task* evaluation, cancelation and memoization as well as tail recursive loops
 and asynchronous boundaries.
 
-The presentation will include a discussion on *ExecutionContext* (required for *Future*) and *Scheduler*
-(required *Task*, but only to run it)
+The presentation will include a comparative discussion on *ExecutionContext* (required for *Future*)
+and *Scheduler* (required for *Task*, but only to run it).
 
 Often recurring on the valuable Monix *Task* doumentation at https://monix.io/docs/3x/eval/task.html
 the presentation can also be seen as an introduction to Monix *Task*.
@@ -216,7 +216,7 @@ the presentation can also be seen as an introduction to Monix *Task*.
 ## Agenda
 
 1. [Referential Transparency](#ReferentialTransparency)
-1. [IO Monad](#IOMonad)
+1. [IO Monad (My Impl)](#IOMonad)
 1. [Is Future referentially transparent?](#FutureReferentiallyTransparent)
 1. [What is Monix Task?](#WhatIsMonixTask)
 1. [Task Evaluation](#TaskEvaluation)
@@ -252,14 +252,16 @@ name: ReferentialTransparency
 
 ---
 
-class: xlarge-font
+class: large-font
 
 ## Referential Transparency
 <br/>
 
 An expression is called referentially transparent if it can be replaced with its corresponding value
-without changing the program's behavior. This requires that the expression is <u>___pure___</u>, that is to say
-the expression value must be the same for the same inputs and its evaluation must have <u>___no side effects___</u>.
+without changing the program's behavior.
+
+This requires that the expression is <u>___pure___</u>, that is to say the expression value must be
+the same for the same inputs and its evaluation must have <u>___no side effects___</u>.
 
 .footnote[
 https://en.wikipedia.org/wiki/Referential_transparency
@@ -288,7 +290,7 @@ https://www.youtube.com/watch?v=X-cEGEJMx_4
 class: middle, center
 name: IOMonad
 
-# 2. IO Monad<br/>(My Implementation)
+# 2. IO Monad<br/>(My Impl)
 <br/>
 <br/>
 <br/>
@@ -298,11 +300,11 @@ name: IOMonad
 
 ---
 
-## IO Program <u>with</u> side effects
+## Impure IO Program <u>with</u> side effects
 <br/>
 
 ```scala
-// program is a 'def'
+// impure program
 def program(): Unit = {
   print("Welcome to Scala!  What's your name?   ")
   val name = scala.io.StdIn.readLine
@@ -313,9 +315,10 @@ def program(): Unit = {
 --
 
 ```scala
-program()       // run program
+program()
 ```
 <br/>
+--
 
 - Whenever a method or a function returns *Unit* it is <u>***impure***</u> (or it is a noop).
   It's intension is to produce a side effect.
@@ -325,11 +328,11 @@ program()       // run program
 
 ---
 
-## IO Program <u>without</u> side effects (*Function0[A]*)
+## Pure IO Program <u>without</u> side effects
 <br/>
 
 ```scala
-// program is a 'val'
+// pure program
 val program: () => Unit =  // () => Unit  is syntactic sugar for:  Function0[Unit]
   () => {
     print("Welcome to Scala!  What's your name?   ")
@@ -344,8 +347,9 @@ val program: () => Unit =  // () => Unit  is syntactic sugar for:  Function0[Uni
 program()    // producing the side effects "at the end of the world"
 ```
 <br/>
+--
 
-- A function returning *Unit*: *Function0[Unit]*
+- Make the program a function returning *Unit*: *Function0[Unit]*
 
 - Free of side effects in it's definition
 
@@ -353,7 +357,7 @@ program()    // producing the side effects "at the end of the world"
 
 ---
 
-## IO Program <u>without</u> side effects (case class)
+## Wrap Function0[A] in a case class
 <br/>
 
 ```scala
@@ -363,6 +367,7 @@ case class IO[A](run: () => A)
 --
 
 ```scala
+// pure program
 val program: IO[Unit] = IO {
   () => {
     print("Welcome to Scala!  What's your name?   ")
@@ -378,6 +383,7 @@ val program: IO[Unit] = IO {
 program.run()    // producing the side effects "at the end of the world"
 ```
 <br/>
+--
 
 - *IO[A]* wraps a *Function0[A]* in a case class.
 
@@ -385,12 +391,14 @@ program.run()    // producing the side effects "at the end of the world"
 
 ---
 
-## Monadic IO Program
+## *IO#map* and *IO#flatMap*
+<br/>
 
 ```scala
 case class IO[A](run: () => A) {
-  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
   def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
+  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
+  def flatten[B](implicit ev: A <:< IO[B]): IO[B] = flatMap(a => a)
 }
 ```
 
@@ -409,6 +417,8 @@ val program: IO[Unit] = for {
 ```scala
 program.run()    // producing the side effects "at the end of the world"
 ```
+<br/>
+--
 
 - With *map* and *flatMap* *IO[A]* is monadic (but it is not yet a Monad).
 
@@ -418,17 +428,17 @@ program.run()    // producing the side effects "at the end of the world"
 
 ---
 
-## *IO.pure* and *IO.eval*
+## Companion object *IO* with *pure* and *eval*
 
 ```scala
 case class IO[A](run: () => A) {
-  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
   def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
+  def map[B](f: A => B): IO[B] = flatMap(a => pure(f(a)))
+  def flatten[B](implicit ev: A <:< IO[B]): IO[B] = flatMap(a => a)
 }
-
 object IO {
-  def pure[A](value: A): IO[A] = IO { () => value }
-  def eval[A](thunk: => A): IO[A] = IO { () => thunk }
+  def pure[A](value: A): IO[A] = IO { () => value }         // eager
+  def eval[A](thunk: => A): IO[A] = IO { () => thunk }      // lazy
 }
 ```
 
@@ -438,148 +448,58 @@ object IO {
 val program: IO[Unit] = for {
   welcome <- IO.pure("Welcome to Scala!")
   _       <- IO.eval { print(s"$welcome  What's your name?   ") }
-  name    <- IO.eval { scala.io.StdIn.readLine }
+  name    <- IO.eval { scala.io.StdIn.readLine }        // simpler with IO.eval
   _       <- IO.eval { println(s"Well hello, $name!") }
 } yield ()
-
-program.run()    // producing the side effects "at the end of the world"
-```
-
-- *IO.pure* is for pure values.
-
-- *IO.eval* simplifies the creation of *IO* instances (*Function0* no longer visible).
-
----
-
-## Synchronous run* methods
-
-```scala
-case class IO[A](run: () => A) {
-
-  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
-  def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
-
-  // ----- impure sync run* methods
-
-  def runToTry: Try[A] = Try { run() }
-
-  def runToEither: Either[Throwable, A] = runToTry.toEither
-}
 ```
 
 --
 
 ```scala
-// running the program synchronously ...
-
-val v1: Unit = program.run()                    // may throw an exception
-
-val v2: Try[Unit] = program.runToTry
-
-val v3: Either[Throwable, Unit] = program.runToEither
+program.run()    // producing the side effects "at the end of the world"
 ```
+--
 
-- *IO#run* may throw an exception.
+- *IO.pure* is <u>eager</u> and accepts a pure value.
 
-- *runToTry* and *runToEither* avoid exceptions.
+- *IO.eval* is <u>lazy</u> and accepts a computation.
+
+- *map* can be written in terms of *flatMap* and *pure*.
 
 ---
 
-## Asynchronous run* methods
+## Monad instance for *IO*
 <br/>
 
 ```scala
-case class IO[A](run: () => A) {
-  // ...
-  // ----- impure async run* methods
+sealed trait IO[+A] {
 
-  // returns a Future that runs the IO eagerly on another thread
-  def runToFuture(implicit ec: ExecutionContext): Future[A] =
-    Future { run() }
-
-  // runs the IO in a Runnable on the given ExecutionContext
-  // and then executes the specified Try based callback
-  def runOnComplete(callback: Try[A] => Unit)
-                                  (implicit ec: ExecutionContext): Unit =
-    ec.execute(new Runnable {
-      override def run(): Unit = callback(runToTry)
-    })
-
-  // runs the IO in a Runnable on the given ExecutionContext
-  // and then executes the specified Either based callback
-  def runAsync(callback: Either[Throwable, A] => Unit)
-                                  (implicit ec: ExecutionContext): Unit =
-    ec.execute(new Runnable {
-      override def run(): Unit = callback(runToEither)
-    })
-}
-```
-
----
-
-## Using the async run* methods
-<br/>
-
-```scala
-// check username and password for correctness
-def authenticate(username: String, password: String): IO[Boolean] = ???
-
-// check Maggie's username and password for correctness
-val checkMaggie: IO[Boolean] = authenticate("maggie", "maggie-pw")
-```
-
-```scala
-// running 'checkMaggie' asynchronously ...
-
-implicit val ec: ExecutionContext = ExecutionContext.global
-
-val future: Future[Boolean] = checkMaggie.runToFuture
-future onComplete tryCallback
-//=> true
-
-checkMaggie runOnComplete tryCallback
-//=> true
-
-checkMaggie runAsync eitherCallback
-//=> true
-```
-
----
-
-## *IO* as a Monad
-<br/>
-
-```scala
-case class IO[A](run: () => A) {
-
-  def map[B](f: A => B): IO[B] = IO { () => f(run()) }
-  def flatMap[B](f: A => IO[B]): IO[B] = IO { () => f(run()).run() }
-
-  // ...
+  def flatMap[B](f: A => IO[B]): IO[B] = IO { f(run()).run() }
+  def map[B](f: A => B): IO[B] = flatMap(a => pure(f(a)))
 }
 
 object IO {
 
-  def pure[A](a: A): IO[A] = IO { () => a }
-  def eval[A](a: => A): IO[A] = IO { () => a }
-
-  // ...
-
-  // Monad instance defined in implicit context
-  implicit def ioMonad: Monad[IO] = new Monad[IO] {
+  implicit val ioMonad: Monad[IO] = new Monad[IO] {
     override def pure[A](value: A): IO[A] = IO.pure(value)
     override def flatMap[A, B](fa: IO[A])(f: A => IO[B]): IO[B] = fa flatMap f
-    override def tailRecM[A, B](a: A)(f: A => IO[Either[A, B]]): IO[B] = ???
   }
 }
 ```
 
+--
+
+<br/>
+- Monad instance defined in companion object (implicit scope)
+
 ---
 
-## Usage of the *IO* Monad
+<br/>
+### Computations that abstract over HKT: &nbsp; &nbsp; &nbsp; *F[_]: Monad*
 <br/>
 
 ```scala
+import scala.language.higherKinds
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 
@@ -598,19 +518,88 @@ def computeF[F[_]: Monad](from: Int, to: Int): F[BigInt] =
     y <- fibonacciF(x)
     z <- factorialF(y.intValue)
   } yield z
+```
 
+- This code can be used with *IO* or any other Monad.
+
+---
+
+- **Reify *F[_] : Monad* with *IO***
+
+```scala
 val io: IO[BigInt] = computeF[IO](1, 4)
+val result: BigInt = io.run()
+println(result)                                                 //=> 6227020800
+```
 
-implicit val ec: ExecutionContext = ExecutionContext.global
-io.runToFuture foreach { result => println(s"result = $result") }
-//=> result = 6227020800
+--
+
+- **Reify *F[_] : Monad* with *cats.Id***
+
+```scala
+val result: cats.Id[BigInt] = computeF[cats.Id](1, 4)
+println(result)                                                 //=> 6227020800
+```
+
+--
+
+- **Reify *F[_] : Monad* with *Option***
+
+```scala
+import cats.instances.option._
+
+val maybeResult: Option[BigInt] = computeF[Option](1, 4)
+maybeResult foreach println                                     //=> 6227020800
+```
+
+--
+
+- **Reify *F[_] : Monad* with *Future***
+
+```scala
+import scala.concurrent.{Future, ExecutionContext}
+import ExecutionContext.Implicits.global
+import cats.instances.future._
+
+val future: Future[BigInt] = computeF[Future](1, 4)
+future foreach println                                          //=> 6227020800
+```
+
+---
+
+## Sync and async run* methods
+
+```scala
+case class IO[A](run: () => A) {
+
+
+  // ----- sync run* methods
+
+  def runToTry: Try[A] = Try { run() }
+
+  def runToEither: Either[Throwable, A] = runToTry.toEither
+
+
+  // ----- async run* methods (all take an EC)
+
+  def runToFuture(implicit ec: ExecutionContext): Future[A] =
+    Future { run() }
+
+  def runOnComplete(callback: Try[A] => Unit)
+                                      (implicit ec: ExecutionContext): Unit =
+    runToFuture onComplete callback
+
+  def runAsync(callback: Either[Throwable, A] => Unit)
+                                      (implicit ec: ExecutionContext): Unit =
+    runOnComplete(tryy => callback(tryy.toEither))
+}
 ```
 
 ---
 
 class: middle, center, large-font
 
-My extended implementation of the IO Monad
+The extended version of my IO Monad impl
 
 can be found here:
 
@@ -679,6 +668,40 @@ future2 onComplete println     // Success((1,2))    <-- not the same result
 
 ---
 
+## Is my IO Monad referentially transparent?
+
+```scala
+val io1: IO[(Int, Int)] = {
+  val atomicInt = new AtomicInteger(0)
+  val io: IO[Int] = IO.eval { atomicInt.incrementAndGet }
+  for {
+    x <- io
+    y <- io
+  } yield (x, y)
+}
+
+io1.runToFuture onComplete println     // Success((1,2))
+```
+
+```scala
+// same as io1, but inlined
+val io2: IO[(Int, Int)] = {
+  val atomicInt = new AtomicInteger(0)
+  for {
+    x <- IO.eval { atomicInt.incrementAndGet }
+    y <- IO.eval { atomicInt.incrementAndGet }
+  } yield (x, y)
+}
+
+io2.runToFuture onComplete println     // Success((1,2))    <-- same result
+```
+
+--
+
+## Yes!
+
+---
+
 ## Is Monix *Task* referentially transparent?
 
 ```scala
@@ -732,7 +755,7 @@ name: WhatIsMonixTask
 
 - library for asynchronous, reactive computations in Scala
 
-- available for ghe JVM and ScalaJS
+- available for the JVM and ScalaJS
 
 - dependent on: [*cats*](https://typelevel.org/cats/) and [*cats-effect*](https://typelevel.org/cats-effect/)
 
@@ -745,14 +768,14 @@ name: WhatIsMonixTask
 
 - *monix.execution.<u>**Scheduler**</u>*: Scheduler that extends *scala.concurrrent.ExecutionContext*
 
-- *monix.eval.<u>**Task**</u>*: an abstaction for asynchronous effects
+- *monix.eval.<u>**Task**</u>*: abstraction for async effects
 
-- *monix.eval.<u>**Coeval**</u>*: an abstaction for synchronous effects
+- *monix.eval.<u>**Coeval**</u>*: abstraction for sync effects
 
-- *monix.reactive.**Observable**</u>*: a push-based streaming library<br/>
+- *monix.reactive.**Observable**</u>*: push-based streaming library<br/>
   (compatible with the *reactivestreams.org* spec)
 
-- *monix.tail.<u>**Iterant**</u>*: a pull-based streaming library<br/>
+- *monix.tail.<u>**Iterant**</u>*: pull-based streaming library<br/>
   (compatible with the *reactivestreams.org* spec)
 
 ---
