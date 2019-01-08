@@ -287,6 +287,55 @@ https://www.youtube.com/watch?v=X-cEGEJMx_4
 
 ---
 
+## *func* <u>is not</u> referentially transparent!
+<br/>
+
+```scala
+def func(ioa1: Unit, ioa2: Unit): Unit = {
+  ioa1
+  ioa2
+}
+
+func(println("hi"), println("hi"))        // prints "hi" twice
+//=> hi
+//=> hi
+
+println("-----")
+
+val x: Unit = println("hi")
+func(x, x)                                // prints "hi" once
+//=> hi
+```
+
+---
+
+## *func* <u>is</u> referentially transparent!
+<br/>
+
+```scala
+def putStrLn(line: String): IO[Unit] =
+IO.eval { println(line) }
+
+def func(ioa1: IO[Unit], ioa2: IO[Unit]): IO[Unit] =
+  for {
+    _ <- ioa1
+    _ <- ioa2
+  } yield ()
+
+func(putStrLn("hi"), putStrLn("hi")).run()   // prints "hi" twice
+//=> hi
+//=> hi
+
+println("-----")
+
+val x: IO[Unit] = putStrLn("hi")
+func(x, x).run()                             // prints "hi" twice
+//=> hi
+//=> hi
+```
+
+---
+
 class: middle, center
 name: IOMonad
 
@@ -354,6 +403,8 @@ program()    // producing the side effects "at the end of the world"
 - Free of side effects in it's definition
 
 - Produces side effects only when run (at the end of the world)
+
+- *program* can be a <u>val</u> (if no parameters are passed to it)
 
 ---
 
