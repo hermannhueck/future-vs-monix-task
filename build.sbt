@@ -15,7 +15,7 @@ scalacOptions ++= Seq(
 )
 
 libraryDependencies ++= Seq(
-  "io.monix" %% "monix" % "3.0.0-RC2",
+  "io.monix" %% "monix" % "3.0.0-RC2" withSources() withJavadoc(),
 )
 
 addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.9")

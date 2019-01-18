@@ -2162,9 +2162,9 @@ Monix *Task* provides asynchrony with JVM threads and green threads.
 
 ## Asynchronous Boundaries - Overview
 
-- An asynchronous boundary is a context switch between two logical threads.
+- An asynchronous boundary may be a context switch between two logical threads.
 
-- A logical thread may be a green thread or a JVM thread.
+- It may also mean that the current thread is rescheduled on the current thread pool.
 
 --
 
